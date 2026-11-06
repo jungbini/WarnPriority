@@ -2,7 +2,7 @@
   "name": "warnpriority",
   "displayName": "WarnPriority",
   "description": "%extension.description%",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "jungbini",
   "repository": {
     "type": "git",
@@ -44,15 +44,6 @@
           "type": "string",
           "default": "",
           "markdownDescription": "%config.outputDirectory%"
-        },
-        "warnPriority.outputFormat": {
-          "type": "string",
-          "enum": [
-            "json",
-            "csv"
-          ],
-          "default": "json",
-          "markdownDescription": "%config.outputFormat%"
         },
         "warnPriority.fileExtensions": {
           "type": "array",

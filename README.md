@@ -1,6 +1,6 @@
 # WarnPriority
 
-GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드가 들어간 커밋**을 찾아, 그 커밋에서 **수정·삽입·삭제된 코드만** 추출해 파일(JSON/CSV)로 저장하는 VS Code 확장입니다.
+GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드가 들어간 커밋**을 찾아, 그 커밋에서 **추가·삭제·수정된 코드만** 추출해 JSON 파일로 저장하는 VS Code 확장입니다.
 
 ## 사용법
 
@@ -8,7 +8,7 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
    (영문 UI: `WarnPriority: Collect Changed Code from GitHub Commits`)을 실행합니다.
 2. **GitHub 주소**를 입력합니다. 예: `https://github.com/google/gson`
 3. **커밋 메시지 키워드**를 입력합니다. 예: `fix, bug`
-4. 진행 상황이 알림으로 표시되고(취소 가능), 완료되면 결과 파일을 열 수 있습니다.
+4. 진행 상황이 알림으로 표시되고(취소 가능), 완료되면 결과 파일이 **VS Code 에디터에서 자동으로 열립니다.**
 
 결과 파일은 기본적으로 `<워크스페이스>/warnpriority-output/` 아래에
 `<owner>_<repo>_<키워드>_<날짜-시간>.json` 이름으로 저장됩니다.
@@ -34,78 +34,63 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
 - 비워 두면 모든 커밋을 수집합니다.
 - 단어 단위로 정확히 찾고 싶으면 `warnPriority.useRegex`를 켜고 `\bfix(e[sd])?\b`처럼 정규식을 입력하세요.
 
-## 변경 유형(수정·삽입·삭제)
+## 결과 파일 형식
 
-diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 줄 묶음(블록) 하나를 다음 중 하나로 분류합니다.
+커밋 하나당 항목 하나인 **JSON 배열**이며, 아래 정보만 저장합니다.
+
+| 필드 | 내용 |
+| --- | --- |
+| `sha` | 커밋 SHA |
+| `parent` | 부모 커밋 SHA (diff 비교 기준인 첫 번째 부모, 최초 커밋이면 `null`) |
+| `author` | 작성자 `이름 <이메일>` |
+| `message` | 커밋 메시지 전체 |
+| `files[].file` | 파일 경로 (삭제된 파일은 삭제 전 경로, 이름이 바뀐 파일은 바뀐 후 경로) |
+| `files[].diff` | 그 파일에서 추가·삭제·수정된 소스코드 (아래) |
+
+```json
+[
+  {
+    "sha": "094f5003ce5f6d2fb65457bee9c78b9d53d25308",
+    "parent": "881d2b55de74dd6c2fded7b2cb307b048117af97",
+    "author": "Marcono1234 <Marcono1234@users.noreply.github.com>",
+    "message": "Fix typo in comment (#3148)",
+    "files": [
+      {
+        "file": "gson/src/main/java/com/google/gson/Gson.java",
+        "diff": [
+          {
+            "type": "modified",
+            "before": ["       * For compatibility with JSON 1.5 and earlier, we return null for empty"],
+            "after":  ["       * For compatibility with Gson 1.5 and earlier, we return null for empty"]
+          },
+          { "type": "added",   "code": ["..."] },
+          { "type": "deleted", "code": ["..."] }
+        ]
+      }
+    ]
+  }
+]
+```
+
+### 변경 유형 (`diff[].type`)
+
+diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 줄 묶음 하나를 다음 중 하나로 분류합니다. 코드는 줄 단위 배열입니다.
 
 | `type` | 의미 | 담기는 코드 |
 | --- | --- | --- |
-| `modify` (수정) | 기존 줄이 삭제되고 그 자리에 다른 줄이 들어감 | `deletedCode`(변경 전) + `addedCode`(변경 후) |
-| `insert` (삽입) | 줄이 추가되기만 함 | `addedCode` |
-| `delete` (삭제) | 줄이 삭제되기만 함 | `deletedCode` |
+| `added` (추가) | 줄이 추가되기만 함 | `code`: 추가된 줄 |
+| `deleted` (삭제) | 줄이 삭제되기만 함 | `code`: 삭제된 줄 |
+| `modified` (수정) | 기존 줄이 삭제되고 그 자리에 다른 줄이 들어감 | `before`: 변경 전 줄, `after`: 변경 후 줄 |
 
-줄 번호(`oldStart`/`newStart`)는 각각 변경 전/후 파일 기준이며, git diff의 hunk 헤더 규칙을 따릅니다.
-`insert`의 `oldStart`는 "변경 전 파일에서 몇 번째 줄 **뒤에** 삽입됐는지"(0 = 파일 맨 앞), `delete`의 `newStart`는 "변경 후 파일에서 몇 번째 줄 뒤에 있던 코드인지"를 뜻합니다.
-
-바이너리 파일, 내용 변경 없는 이름 변경/권한 변경은 코드 변경이 없으므로 제외됩니다.
-
-## 출력 형식
-
-### JSON (기본)
-
-```jsonc
-{
-  "metadata": {
-    "repository": { "url": "https://github.com/google/gson", "ref": "main", "headCommit": "65df6e5…" },
-    "query": { "keywords": ["fix", "bug"], "matchMode": "substring", "caseSensitive": false, "fileExtensions": ["java"] }
-  },
-  "commits": [
-    {
-      "sha": "094f5003…",
-      "parents": ["…"],
-      "author": { "name": "…", "email": "…", "date": "2024-06-01T12:34:56+02:00" },
-      "committer": { "name": "…", "email": "…", "date": "…" },
-      "message": "Fix typo in comment (#3148)",
-      "url": "https://github.com/google/gson/commit/094f5003…",
-      "stats": { "filesChanged": 1, "linesAdded": 1, "linesDeleted": 1, "modifyBlocks": 1, "insertBlocks": 0, "deleteBlocks": 0 },
-      "files": [
-        {
-          "oldPath": "gson/src/main/java/com/google/gson/Gson.java",
-          "newPath": "gson/src/main/java/com/google/gson/Gson.java",
-          "status": "modified",          // added | deleted | modified | renamed | copied
-          "changes": [
-            {
-              "type": "modify",
-              "oldStart": 1118, "oldLines": 1,
-              "newStart": 1118, "newLines": 1,
-              "deletedCode": ["       * For compatibility with JSON 1.5 and earlier, we return null for empty"],
-              "addedCode":   ["       * For compatibility with Gson 1.5 and earlier, we return null for empty"]
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "summary": {
-    "complete": true,                 // 중간에 취소하면 false (그때까지의 결과는 저장됨)
-    "matchedCommits": 381, "commitsWithCodeChanges": 380, "filesChanged": 1654,
-    "codeChanges": { "modify": 5798, "insert": 1570, "delete": 576, "total": 7944 },
-    "linesAdded": 36198, "linesDeleted": 18085
-  }
-}
-```
-
-### CSV
-
-`warnPriority.outputFormat`을 `csv`로 바꾸면 **변경 블록 하나당 한 행**으로 저장합니다(UTF-8 BOM 포함, Excel에서 바로 열림).
-컬럼: `commit_sha, commit_url, author_name, author_email, author_date, commit_message, file_status, old_path, new_path, change_type, old_start, old_lines, new_start, new_lines, deleted_code, added_code`
+- 바이너리 파일, 내용 변경 없는 이름 변경/권한 변경은 코드 변경이 없으므로 제외됩니다.
+- 중간에 취소해도 그때까지 수집한 커밋은 올바른 JSON 배열로 저장되고 열립니다.
+- 검색 조건(저장소·키워드)은 파일 이름(`<owner>_<repo>_<키워드>_<날짜-시간>.json`)과 출력 창(`WarnPriority`) 로그에 남습니다.
 
 ## 설정
 
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
 | `warnPriority.outputDirectory` | `""` | 결과 저장 폴더. 비우면 `<워크스페이스>/warnpriority-output` |
-| `warnPriority.outputFormat` | `json` | `json` 또는 `csv` |
 | `warnPriority.fileExtensions` | `[]` | 특정 확장자 파일만 수집. 예: `["java"]` |
 | `warnPriority.maxCommits` | `0` | 최대 커밋 수(최신순). `0` = 제한 없음 |
 | `warnPriority.caseSensitive` | `false` | 키워드 대소문자 구분 |
@@ -137,10 +122,10 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
 - VS Code 없이 같은 기능을 CLI로 실행할 수도 있습니다(일괄 수집에 유용):
 
   ```bash
-  npm run collect -- https://github.com/google/gson "fix,bug" --ext java --format csv --out gson.csv
+  npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out gson.json
   ```
 
-  옵션: `--out <파일>`, `--format json|csv`, `--ext java,py`, `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
+  옵션: `--out <파일>`, `--ext java,py`, `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 
@@ -154,9 +139,9 @@ src/
    ├─ githubUrl.ts     주소 파싱 (URL/SSH/축약형/브랜치 URL)
    ├─ repoCache.ts     bare clone 캐시, fetch, 브랜치 해석
    ├─ git.ts           git 프로세스 실행/스트리밍, 취소 처리
-   ├─ logParser.ts     git log -p 출력 스트리밍 파서 → 수정/삽입/삭제 블록
-   ├─ writers.ts       JSON/CSV 스트리밍 저장
+   ├─ logParser.ts     git log -p 출력 스트리밍 파서 → 추가/삭제/수정 블록
+   ├─ writers.ts       결과 JSON 스트리밍 저장 (저장 필드 변환: toOutputCommit)
    ├─ collector.ts     전체 파이프라인
-   └─ types.ts         결과 데이터 모델
+   └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)
 l10n/, package.nls*.json   영어/한국어 UI 문자열 (VS Code 표시 언어에 따라 자동 선택)
 ```

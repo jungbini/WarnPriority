@@ -29,7 +29,7 @@ function parse(lines: string[]): CommitRecord[] {
   return out;
 }
 
-test('classifies modify / insert / delete blocks with correct line numbers', () => {
+test('classifies added / deleted / modified blocks with correct line numbers', () => {
   const commits = parse([
     ...header('a'.repeat(40), 'b'.repeat(40), 'Fix NPE in parser\n\nLonger body'),
     'diff --git a/src/A.java b/src/A.java',
@@ -67,7 +67,7 @@ test('classifies modify / insert / delete blocks with correct line numbers', () 
   assert.equal(f.newPath, 'src/A.java');
   assert.deepEqual(f.changes, [
     {
-      type: 'modify',
+      type: 'modified',
       oldStart: 11,
       oldLines: 1,
       newStart: 11,
@@ -75,10 +75,10 @@ test('classifies modify / insert / delete blocks with correct line numbers', () 
       deletedCode: ['    return x.length();'],
       addedCode: ['    if (x == null) return 0;', '    return x.length();'],
     },
-    { type: 'insert', oldStart: 20, oldLines: 0, newStart: 22, newLines: 2, deletedCode: [], addedCode: ['inserted1', 'inserted2'] },
-    { type: 'delete', oldStart: 30, oldLines: 2, newStart: 31, newLines: 0, deletedCode: ['gone1', 'gone2'], addedCode: [] },
+    { type: 'added', oldStart: 20, oldLines: 0, newStart: 22, newLines: 2, deletedCode: [], addedCode: ['inserted1', 'inserted2'] },
+    { type: 'deleted', oldStart: 30, oldLines: 2, newStart: 31, newLines: 0, deletedCode: ['gone1', 'gone2'], addedCode: [] },
   ]);
-  assert.deepEqual(c.stats, { filesChanged: 1, linesAdded: 4, linesDeleted: 3, modifyBlocks: 1, insertBlocks: 1, deleteBlocks: 1 });
+  assert.deepEqual(c.stats, { filesChanged: 1, linesAdded: 4, linesDeleted: 3, addedBlocks: 1, deletedBlocks: 1, modifiedBlocks: 1 });
 });
 
 test('separate blocks inside one hunk are split at context lines', () => {
@@ -99,8 +99,8 @@ test('separate blocks inside one hunk are split at context lines', () => {
   assert.deepEqual(
     c.files[0].changes.map((x) => [x.type, x.oldStart, x.newStart]),
     [
-      ['modify', 1, 1],
-      ['modify', 4, 4],
+      ['modified', 1, 1],
+      ['modified', 4, 4],
     ],
   );
 });
@@ -187,7 +187,7 @@ test('added, deleted, renamed, binary and odd paths', () => {
     ],
   );
   assert.deepEqual(c.files[0].changes[0], {
-    type: 'insert',
+    type: 'added',
     oldStart: 0,
     oldLines: 0,
     newStart: 1,
@@ -196,7 +196,7 @@ test('added, deleted, renamed, binary and odd paths', () => {
     addedCode: ['one', 'two'],
   });
   assert.deepEqual(c.files[1].changes[0], {
-    type: 'delete',
+    type: 'deleted',
     oldStart: 1,
     oldLines: 1,
     newStart: 0,
@@ -231,7 +231,7 @@ test('several commits, empty message, message without trailing newline, commit w
   const commits = parse(lines);
   assert.equal(commits.length, 3);
   assert.equal(commits[0].message, '');
-  assert.equal(commits[0].files[0].changes[0].type, 'modify');
+  assert.equal(commits[0].files[0].changes[0].type, 'modified');
   assert.equal(commits[1].message, 'subject only');
   assert.equal(commits[1].files.length, 0);
   assert.equal(commits[2].message, 'line1');

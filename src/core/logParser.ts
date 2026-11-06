@@ -243,7 +243,7 @@ export class GitLogParser {
     if (b.deleted.length === 0 && b.added.length === 0) {
       return;
     }
-    const type: ChangeType = b.deleted.length > 0 && b.added.length > 0 ? 'modify' : b.added.length > 0 ? 'insert' : 'delete';
+    const type: ChangeType = b.deleted.length > 0 && b.added.length > 0 ? 'modified' : b.added.length > 0 ? 'added' : 'deleted';
     this.file.changes.push({
       type,
       oldStart: b.deleted.length > 0 ? b.oldStart : b.oldStart - 1,
@@ -291,7 +291,7 @@ export class GitLogParser {
 }
 
 function emptyStats(): CommitStats {
-  return { filesChanged: 0, linesAdded: 0, linesDeleted: 0, modifyBlocks: 0, insertBlocks: 0, deleteBlocks: 0 };
+  return { filesChanged: 0, linesAdded: 0, linesDeleted: 0, addedBlocks: 0, deletedBlocks: 0, modifiedBlocks: 0 };
 }
 
 function computeStats(files: FileChange[]): CommitStats {
@@ -301,12 +301,12 @@ function computeStats(files: FileChange[]): CommitStats {
     for (const c of f.changes) {
       s.linesAdded += c.newLines;
       s.linesDeleted += c.oldLines;
-      if (c.type === 'modify') {
-        s.modifyBlocks++;
-      } else if (c.type === 'insert') {
-        s.insertBlocks++;
+      if (c.type === 'added') {
+        s.addedBlocks++;
+      } else if (c.type === 'deleted') {
+        s.deletedBlocks++;
       } else {
-        s.deleteBlocks++;
+        s.modifiedBlocks++;
       }
     }
   }

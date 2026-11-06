@@ -1,8 +1,8 @@
 import { CancelledError, GitContext, GitError, runGit, streamGitLines } from './git';
 import { GitLogParser, LOG_FORMAT } from './logParser';
 import { ensureBareClone, resolveStartCommit } from './repoCache';
-import { OutputFormat, ProgressEvent, RepoRef } from './types';
-import { createOutputWriter, RunSummary } from './writers';
+import { ProgressEvent, RepoRef } from './types';
+import { JsonArrayWriter, RunSummary } from './writers';
 
 export interface CollectOptions {
   repo: RepoRef;
@@ -17,7 +17,7 @@ export interface CollectOptions {
   ignoreWhitespace: boolean;
   /** 0 = no limit. */
   maxCommits: number;
-  format: OutputFormat;
+  /** Result file (JSON array, see `OutputCommit`). */
   outputFile: string;
   /** Where bare clones are cached between runs. */
   cacheDir: string;
@@ -86,39 +86,12 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
   );
   opts.log?.(`${total} matching commit(s)`);
 
-  const metadata = {
-    tool: 'WarnPriority',
-    generatedAt: new Date().toISOString(),
-    repository: {
-      url: opts.repo.webUrl ?? opts.repo.cloneUrl,
-      owner: opts.repo.owner,
-      name: opts.repo.name,
-      ref: start.ref,
-      headCommit: start.sha,
-    },
-    query: {
-      keywords,
-      matchMode: opts.useRegex ? 'regex' : 'substring',
-      caseSensitive: opts.caseSensitive,
-      fileExtensions: opts.fileExtensions,
-      includeMergeCommits: opts.includeMergeCommits,
-      ignoreWhitespace: opts.ignoreWhitespace,
-      maxCommits: opts.maxCommits,
-    },
-    gitVersion: gitVersion.text,
-    changeTypes: {
-      modify: 'existing lines were replaced (deletedCode -> addedCode)',
-      insert: 'lines were added only (addedCode); oldStart is the old line after which they were inserted',
-      delete: 'lines were removed only (deletedCode); newStart is the new line after which they used to be',
-    },
-  };
-
   const summary: RunSummary = {
     complete: false,
     matchedCommits: 0,
     commitsWithCodeChanges: 0,
     filesChanged: 0,
-    codeChanges: { modify: 0, insert: 0, delete: 0, total: 0 },
+    codeChanges: { added: 0, deleted: 0, modified: 0, total: 0 },
     linesAdded: 0,
     linesDeleted: 0,
     finishedAt: '',
@@ -165,7 +138,7 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     ...tail,
   ];
 
-  const writer = createOutputWriter(opts.format, opts.outputFile, metadata);
+  const writer = new JsonArrayWriter(opts.outputFile);
   const commitUrl = opts.repo.webUrl ? (sha: string) => `${opts.repo.webUrl}/commit/${sha}` : () => null;
   const parser = new GitLogParser(commitUrl);
   let lastProgressAt = 0;
@@ -180,10 +153,10 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
       summary.filesChanged += commit.stats.filesChanged;
       summary.linesAdded += commit.stats.linesAdded;
       summary.linesDeleted += commit.stats.linesDeleted;
-      summary.codeChanges.modify += commit.stats.modifyBlocks;
-      summary.codeChanges.insert += commit.stats.insertBlocks;
-      summary.codeChanges.delete += commit.stats.deleteBlocks;
-      summary.codeChanges.total += commit.stats.modifyBlocks + commit.stats.insertBlocks + commit.stats.deleteBlocks;
+      summary.codeChanges.added += commit.stats.addedBlocks;
+      summary.codeChanges.deleted += commit.stats.deletedBlocks;
+      summary.codeChanges.modified += commit.stats.modifiedBlocks;
+      summary.codeChanges.total += commit.stats.addedBlocks + commit.stats.deletedBlocks + commit.stats.modifiedBlocks;
       await writer.writeCommit(commit);
     }
     const now = Date.now();
@@ -214,7 +187,7 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     result.outputFile = null;
     return result;
   }
-  await writer.close(summary);
+  await writer.close();
   return result;
 }
 
@@ -231,14 +204,14 @@ export function toPathspecs(extensions: string[]): string[] {
 }
 
 /** Builds a file name such as "owner_repo_fix-bug_20250101-120000.json". */
-export function defaultOutputFileName(repo: RepoRef, keywords: string[], format: OutputFormat, date = new Date()): string {
+export function defaultOutputFileName(repo: RepoRef, keywords: string[], date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp =
     `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-` +
     `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
   const kw = keywords.map((k) => k.trim()).filter((k) => k).join('-') || 'all';
   const parts = [repo.owner, repo.name, kw.slice(0, 40), stamp].filter((p): p is string => !!p);
-  return parts.join('_').replace(/[<>:"/\\|?*\x00-\x1f\s]+/g, '_') + `.${format}`;
+  return parts.join('_').replace(/[<>:"/\\|?*\x00-\x1f\s]+/g, '_') + '.json';
 }
 
 async function getGitVersion(ctx: GitContext): Promise<{ text: string; numbers: number[] }> {

@@ -3,26 +3,29 @@
  *
  * Only changed lines are kept (no context lines). Each contiguous block of
  * changed lines is classified as one of:
- *   - "modify": lines were removed and replaced by other lines (수정)
- *   - "insert": lines were only added (삽입)
- *   - "delete": lines were only removed (삭제)
+ *   - "added":    lines were only added (추가)
+ *   - "deleted":  lines were only removed (삭제)
+ *   - "modified": lines were removed and replaced by other lines (수정)
+ *
+ * The parser keeps a richer model (line numbers, dates, ...) than what is
+ * written to the result file; see `OutputCommit` for the file format.
  */
 
-export type ChangeType = 'modify' | 'insert' | 'delete';
+export type ChangeType = 'added' | 'deleted' | 'modified';
 
 export type FileStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'copied';
 
 export interface CodeChange {
   type: ChangeType;
   /**
-   * First removed line in the old file. When `oldLines` is 0 (insert), this is
+   * First removed line in the old file. When `oldLines` is 0 (added), this is
    * the old-file line *after which* the code was inserted (0 = top of file),
    * following the unified diff hunk header convention.
    */
   oldStart: number;
   oldLines: number;
   /**
-   * First added line in the new file. When `newLines` is 0 (delete), this is
+   * First added line in the new file. When `newLines` is 0 (deleted), this is
    * the new-file line *after which* the code used to be.
    */
   newStart: number;
@@ -64,9 +67,9 @@ export interface CommitStats {
   filesChanged: number;
   linesAdded: number;
   linesDeleted: number;
-  modifyBlocks: number;
-  insertBlocks: number;
-  deleteBlocks: number;
+  addedBlocks: number;
+  deletedBlocks: number;
+  modifiedBlocks: number;
 }
 
 export interface RepoRef {
@@ -84,7 +87,41 @@ export interface RepoRef {
   refHint: string | null;
 }
 
-export type OutputFormat = 'json' | 'csv';
+/**
+ * Result file format: a JSON array of these, one per commit.
+ *
+ *   [
+ *     {
+ *       "sha": "...", "parent": "...", "author": "Name <email>", "message": "...",
+ *       "files": [
+ *         { "file": "src/A.java",
+ *           "diff": [
+ *             { "type": "added",    "code": ["..."] },
+ *             { "type": "deleted",  "code": ["..."] },
+ *             { "type": "modified", "before": ["..."], "after": ["..."] } ] } ]
+ *     }
+ *   ]
+ */
+export interface OutputCommit {
+  sha: string;
+  /** The parent the diff was computed against (first parent); null for the root commit. */
+  parent: string | null;
+  /** "Name <email>", as shown by `git log`. */
+  author: string;
+  message: string;
+  files: OutputFile[];
+}
+
+export interface OutputFile {
+  /** Path after the commit (path before the commit for deleted files). */
+  file: string;
+  diff: OutputDiff[];
+}
+
+export type OutputDiff =
+  | { type: 'added'; code: string[] }
+  | { type: 'deleted'; code: string[] }
+  | { type: 'modified'; before: string[]; after: string[] };
 
 /** Progress events emitted while collecting; the UI decides how to render them. */
 export type ProgressEvent =

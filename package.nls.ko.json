@@ -1,9 +1,8 @@
 {
-  "extension.description": "키워드와 일치하는 GitHub 커밋 메시지를 찾아, 해당 커밋에서 수정·삽입·삭제된 코드만 수집합니다.",
+  "extension.description": "키워드와 일치하는 GitHub 커밋 메시지를 찾아, 해당 커밋에서 추가·삭제·수정된 코드만 JSON으로 수집합니다.",
   "command.collectCommitChanges.title": "GitHub 커밋에서 변경된 코드 수집",
   "command.clearRepositoryCache.title": "캐시된 저장소 복제본 삭제",
   "config.outputDirectory": "결과 파일을 저장할 폴더입니다. 상대 경로는 첫 번째 워크스페이스 폴더 기준입니다. 비워 두면 `<워크스페이스>/warnpriority-output`에 저장합니다(열린 폴더가 없으면 저장 대화상자를 띄웁니다).",
-  "config.outputFormat": "결과 파일 형식입니다. `json`: 커밋별로 변경 파일과 코드 블록을 담은 객체, `csv`: 변경 코드 블록 하나당 한 행.",
   "config.fileExtensions": "이 확장자를 가진 파일의 변경만 수집합니다. 예: `[\"java\", \"kt\"]`. 비워 두면 모든 파일을 수집합니다.",
   "config.maxCommits": "수집할 최대 커밋 수입니다(최신 커밋부터). `0`이면 제한이 없습니다.",
   "config.caseSensitive": "커밋 메시지 키워드를 대소문자를 구분해 검색합니다.",

@@ -56,7 +56,6 @@ function options(overrides: Partial<CollectOptions>): CollectOptions {
     includeMergeCommits: false,
     ignoreWhitespace: false,
     maxCommits: 0,
-    format: 'json',
     outputFile: path.join(root, `out-${Math.random().toString(36).slice(2)}.json`),
     cacheDir,
     gitPath: 'git',
@@ -98,28 +97,54 @@ test('collects only commits whose message contains the keyword (case-insensitive
   assert.equal(result.ref, 'main');
   assert.equal(result.outputFile, opts.outputFile);
 
-  const data = readJson(opts.outputFile);
-  const messages = data.commits.map((c: { message: string }) => c.message.split('\n')[0]);
-  assert.deepEqual(messages, ['Remove Old (fix build)', 'bugfix: wrong constant', 'docs: FIX readme', 'Fix division by zero']);
-  assert.equal(data.summary.complete, true);
-  assert.equal(data.summary.matchedCommits, 4);
-  assert.deepEqual(data.metadata.query.keywords, ['fix']);
+  assert.equal(result.summary.complete, true);
+  assert.equal(result.summary.matchedCommits, 4);
 
-  const fix = data.commits[3];
-  assert.equal(fix.files.length, 1);
-  assert.deepEqual(fix.files[0].changes, [
-    { type: 'insert', oldStart: 2, oldLines: 0, newStart: 3, newLines: 1, deletedCode: [], addedCode: ['    if (b == 0) return 0;'] },
+  const data = readJson(opts.outputFile);
+  assert.ok(Array.isArray(data));
+  const messages = data.map((c: { message: string }) => c.message.split('\n')[0]);
+  assert.deepEqual(messages, ['Remove Old (fix build)', 'bugfix: wrong constant', 'docs: FIX readme', 'Fix division by zero']);
+
+  const fix = data[3];
+  assert.deepEqual(fix.files, [{ file: 'src/Calc.java', diff: [{ type: 'added', code: ['    if (b == 0) return 0;'] }] }]);
+  assert.deepEqual(data[0].files, [{ file: 'src/Old.java', diff: [{ type: 'deleted', code: ['class Old {}'] }] }]);
+});
+
+test('result file contains only sha, parent, author, message and per-file diffs', async () => {
+  const opts = options({ keywords: ['bugfix'] });
+  await collectCommitChanges(opts);
+  const data = readJson(opts.outputFile);
+  const sha = git(source, 'log', '--format=%H', '--grep=bugfix', 'main').trim();
+  const parent = git(source, 'rev-parse', `${sha}^`).trim();
+  assert.deepEqual(data, [
+    {
+      sha,
+      parent,
+      author: 'Tester <tester@example.com>',
+      message: 'bugfix: wrong constant',
+      files: [
+        { file: 'src/Calc.java', diff: [{ type: 'added', code: ['// bugfix note'] }] },
+        { file: 'src/util.py', diff: [{ type: 'modified', before: ['    return 1'], after: ['    return 2'] }] },
+      ],
+    },
   ]);
-  const removed = data.commits[0].files[0];
-  assert.equal(removed.status, 'deleted');
-  assert.equal(removed.newPath, null);
-  assert.deepEqual(removed.changes[0].deletedCode, ['class Old {}']);
+});
+
+test('root commit has a null parent', async () => {
+  const opts = options({ keywords: ['Initial commit'] });
+  await collectCommitChanges(opts);
+  const [initial] = readJson(opts.outputFile);
+  assert.equal(initial.parent, null);
+  assert.deepEqual(
+    initial.files.map((f: { file: string }) => f.file),
+    ['README.md', 'src/Calc.java'],
+  );
 });
 
 test('multiple keywords are OR-ed, and case sensitivity can be turned on', async () => {
   const opts = options({ keywords: ['Fix', 'constant'], caseSensitive: true });
   await collectCommitChanges(opts);
-  const messages = readJson(opts.outputFile).commits.map((c: { message: string }) => c.message.split('\n')[0]);
+  const messages = readJson(opts.outputFile).map((c: { message: string }) => c.message.split('\n')[0]);
   assert.deepEqual(messages, ['bugfix: wrong constant', 'Fix division by zero']);
 });
 
@@ -127,27 +152,17 @@ test('file extension filter limits files and drops commits without matching file
   const opts = options({ keywords: ['fix'], fileExtensions: ['.JAVA'] });
   await collectCommitChanges(opts);
   const data = readJson(opts.outputFile);
-  const files = data.commits.flatMap((c: { files: { oldPath: string; newPath: string }[] }) => c.files.map((f) => f.newPath ?? f.oldPath));
+  const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
   assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/Calc.java']);
-  assert.ok(!data.commits.some((c: { message: string }) => c.message.includes('readme')));
+  assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')));
 });
 
 test('regex keywords and max commit limit', async () => {
   const opts = options({ keywords: ['^(fix|bugfix)'], useRegex: true, maxCommits: 1 });
   await collectCommitChanges(opts);
   const data = readJson(opts.outputFile);
-  assert.equal(data.commits.length, 1);
-  assert.equal(data.commits[0].message, 'bugfix: wrong constant');
-});
-
-test('CSV output has one row per code block', async () => {
-  const outputFile = path.join(root, 'out.csv');
-  await collectCommitChanges(options({ keywords: ['bugfix'], format: 'csv', outputFile }));
-  const csv = readFileSync(outputFile, 'utf8');
-  assert.ok(csv.startsWith('﻿commit_sha,commit_url,'));
-  const rows = csv.trim().split('\r\n');
-  assert.equal(rows.length, 3); // header + Calc.java insert + util.py modify
-  assert.ok(rows.some((r) => r.endsWith(',src/util.py,src/util.py,modify,2,1,2,1,"    return 1","    return 2"')));
+  assert.equal(data.length, 1);
+  assert.equal(data[0].message, 'bugfix: wrong constant');
 });
 
 test('no matching commit writes no file', async () => {
@@ -163,7 +178,7 @@ test('a cached clone is reused and updated with new commits', async () => {
   const opts = options({ keywords: ['add new'] });
   await collectCommitChanges(opts);
   assert.equal(readdirSync(cacheDir).length, clonesBefore);
-  assert.equal(readJson(opts.outputFile).commits[0].message, 'Fix: add New');
+  assert.equal(readJson(opts.outputFile)[0].message, 'Fix: add New');
 });
 
 test('ref from a /tree/ URL selects the branch', async () => {
@@ -174,7 +189,7 @@ test('ref from a /tree/ URL selects the branch', async () => {
   const opts = options({ repo, keywords: ['feature branch'] });
   const result = await collectCommitChanges(opts);
   assert.equal(result.ref, 'feature/x');
-  assert.equal(readJson(opts.outputFile).commits.length, 1);
+  assert.equal(readJson(opts.outputFile).length, 1);
 });
 
 test('cancellation before start throws CancelledError', async () => {
@@ -191,6 +206,6 @@ test('unknown repository gives a readable error and leaves no cache entry', asyn
 
 test('helpers', () => {
   assert.deepEqual(toPathspecs(['java', '.py', '*.kt', ' ', 'java']), [':(icase)*.java', ':(icase)*.py', ':(icase)*.kt']);
-  const name = defaultOutputFileName(parseRepositoryInput('https://github.com/o/r'), ['fix', 'bug/x'], 'json', new Date(2024, 0, 2, 3, 4, 5));
+  const name = defaultOutputFileName(parseRepositoryInput('https://github.com/o/r'), ['fix', 'bug/x'], new Date(2024, 0, 2, 3, 4, 5));
   assert.equal(name, 'o_r_fix-bug_x_20240102-030405.json');
 });

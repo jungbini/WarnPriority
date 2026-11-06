@@ -1,9 +1,8 @@
 {
-  "extension.description": "Collects the code changed (modified, inserted, deleted) by GitHub commits whose messages match given keywords.",
+  "extension.description": "Collects the code added, deleted or modified by GitHub commits whose messages match given keywords, as JSON.",
   "command.collectCommitChanges.title": "Collect Changed Code from GitHub Commits",
   "command.clearRepositoryCache.title": "Clear Cached Repository Clones",
   "config.outputDirectory": "Folder where result files are saved. Relative paths are resolved against the first workspace folder. Empty: `<workspace>/warnpriority-output` (or a save dialog when no folder is open).",
-  "config.outputFormat": "Result file format. `json`: one object per commit with its changed files and code blocks. `csv`: one row per changed code block.",
   "config.fileExtensions": "Only collect changes to files with these extensions, e.g. `[\"java\", \"kt\"]`. Empty: all files.",
   "config.maxCommits": "Maximum number of matching commits to collect (newest first). `0`: no limit.",
   "config.caseSensitive": "Match commit message keywords case-sensitively.",

@@ -2,10 +2,10 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { collectCommitChanges, defaultOutputFileName } from './core/collector';
+import { collectCommitChanges, CollectResult, defaultOutputFileName } from './core/collector';
 import { CancelledError } from './core/git';
 import { parseRepositoryInput } from './core/githubUrl';
-import { OutputFormat, ProgressEvent, RepoRef } from './core/types';
+import { ProgressEvent, RepoRef } from './core/types';
 
 const LAST_URL_KEY = 'warnPriority.lastRepositoryUrl';
 const LAST_KEYWORDS_KEY = 'warnPriority.lastKeywords';
@@ -75,16 +75,16 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
   await context.globalState.update(LAST_KEYWORDS_KEY, keywordInput.trim());
 
   const config = vscode.workspace.getConfiguration('warnPriority');
-  const format = config.get<OutputFormat>('outputFormat', 'json') === 'csv' ? 'csv' : 'json';
-  const outputFile = await chooseOutputFile(config, repo, keywords, format);
+  const outputFile = await chooseOutputFile(config, repo, keywords);
   if (!outputFile) {
     return;
   }
 
   running = true;
   output.appendLine(`[${new Date().toLocaleString()}] ${repo.webUrl ?? repo.cloneUrl} | keywords: ${keywords.join(', ') || '(all commits)'}`);
+  let result: CollectResult;
   try {
-    await vscode.window.withProgress(
+    result = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: `WarnPriority: ${repo.owner ? `${repo.owner}/` : ''}${repo.name}`,
@@ -100,7 +100,7 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
           percent = Math.max(percent, target);
         };
         try {
-          const result = await collectCommitChanges({
+          return await collectCommitChanges({
             repo,
             keywords,
             caseSensitive: config.get<boolean>('caseSensitive', false),
@@ -109,7 +109,6 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
             includeMergeCommits: config.get<boolean>('includeMergeCommits', false),
             ignoreWhitespace: config.get<boolean>('ignoreWhitespace', false),
             maxCommits: config.get<number>('maxCommits', 0),
-            format,
             outputFile,
             cacheDir: path.join(context.globalStorageUri.fsPath, 'repos'),
             gitPath: await resolveGitPath(config),
@@ -117,8 +116,6 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
             log: (m) => output.appendLine(m),
             onProgress: report,
           });
-          output.appendLine(JSON.stringify(result.summary));
-          await showResult(result.outputFile, result.cancelled, result.summary, keywords, result.warnings.length > 0, output);
         } finally {
           sub.dispose();
         }
@@ -139,9 +136,14 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
     if (choice === showLog) {
       output.show();
     }
+    return;
   } finally {
     running = false;
   }
+
+  // Outside withProgress, so the progress notification closes right away.
+  output.appendLine(JSON.stringify(result.summary));
+  await showResult(result, keywords, output);
 }
 
 function describeProgress(e: ProgressEvent): string {
@@ -158,17 +160,12 @@ function describeProgress(e: ProgressEvent): string {
   }
 }
 
-async function showResult(
-  outputFile: string | null,
-  cancelled: boolean,
-  summary: { matchedCommits: number; commitsWithCodeChanges: number; codeChanges: { total: number; modify: number; insert: number; delete: number } },
-  keywords: string[],
-  hadWarnings: boolean,
-  output: vscode.OutputChannel,
-): Promise<void> {
-  if (hadWarnings) {
+/** Opens the result file in an editor and reports what was collected. */
+async function showResult(result: CollectResult, keywords: string[], output: vscode.OutputChannel): Promise<void> {
+  if (result.warnings.length > 0) {
     output.show(true);
   }
+  const { outputFile, summary } = result;
   if (!outputFile) {
     vscode.window.showInformationMessage(
       keywords.length > 0
@@ -177,27 +174,34 @@ async function showResult(
     );
     return;
   }
+
+  const uri = vscode.Uri.file(outputFile);
+  try {
+    // "vscode.open" (unlike openTextDocument) also works for files over 50 MB,
+    // which VS Code does not sync to extensions.
+    await vscode.commands.executeCommand('vscode.open', uri, { preview: false });
+  } catch (e) {
+    output.appendLine(`Could not open ${outputFile}: ${(e as Error).message}`);
+  }
+
   const c = summary.codeChanges;
-  const text = cancelled
+  const text = result.cancelled
     ? vscode.l10n.t('Cancelled. Partial results ({0} commits) were saved to {1}.', summary.matchedCommits, path.basename(outputFile))
     : vscode.l10n.t(
-        'Collected {0} code changes (modify {1}, insert {2}, delete {3}) from {4} commits. Saved to {5}.',
+        'Collected {0} code changes (added {1}, deleted {2}, modified {3}) from {4} commits. Saved to {5}.',
         c.total,
-        c.modify,
-        c.insert,
-        c.delete,
+        c.added,
+        c.deleted,
+        c.modified,
         summary.commitsWithCodeChanges,
         path.basename(outputFile),
       );
-  const open = vscode.l10n.t('Open File');
   const reveal = vscode.l10n.t('Reveal in File Explorer');
-  const choice = cancelled
-    ? await vscode.window.showWarningMessage(text, open, reveal)
-    : await vscode.window.showInformationMessage(text, open, reveal);
-  if (choice === open) {
-    await vscode.window.showTextDocument(vscode.Uri.file(outputFile));
-  } else if (choice === reveal) {
-    await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(outputFile));
+  const choice = result.cancelled
+    ? await vscode.window.showWarningMessage(text, reveal)
+    : await vscode.window.showInformationMessage(text, reveal);
+  if (choice === reveal) {
+    await vscode.commands.executeCommand('revealFileInOS', uri);
   }
 }
 
@@ -210,9 +214,8 @@ async function chooseOutputFile(
   config: vscode.WorkspaceConfiguration,
   repo: RepoRef,
   keywords: string[],
-  format: OutputFormat,
 ): Promise<string | undefined> {
-  const fileName = defaultOutputFileName(repo, keywords, format);
+  const fileName = defaultOutputFileName(repo, keywords);
   const workspaceDir = vscode.workspace.workspaceFolders?.find((f) => f.uri.scheme === 'file')?.uri.fsPath;
   let dir = config.get<string>('outputDirectory', '').trim();
   if (dir.startsWith('~')) {
@@ -223,7 +226,7 @@ async function chooseOutputFile(
     const uri = await vscode.window.showSaveDialog({
       title: vscode.l10n.t('Save collected code changes'),
       defaultUri: vscode.Uri.file(path.join(os.homedir(), fileName)),
-      filters: format === 'csv' ? { CSV: ['csv'] } : { JSON: ['json'] },
+      filters: { JSON: ['json'] },
     });
     return uri?.fsPath;
   }
