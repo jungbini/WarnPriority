@@ -1,0 +1,265 @@
+import { CancelledError, GitContext, GitError, runGit, streamGitLines } from './git';
+import { GitLogParser, LOG_FORMAT } from './logParser';
+import { ensureBareClone, resolveStartCommit } from './repoCache';
+import { OutputFormat, ProgressEvent, RepoRef } from './types';
+import { createOutputWriter, RunSummary } from './writers';
+
+export interface CollectOptions {
+  repo: RepoRef;
+  /** Commit message keywords; a commit matches if its message contains any of them. Empty = all commits. */
+  keywords: string[];
+  caseSensitive: boolean;
+  /** Treat keywords as (POSIX extended) regular expressions instead of plain text. */
+  useRegex: boolean;
+  /** Only collect changes to files with these extensions (e.g. ["java", ".py"]). Empty = all files. */
+  fileExtensions: string[];
+  includeMergeCommits: boolean;
+  ignoreWhitespace: boolean;
+  /** 0 = no limit. */
+  maxCommits: number;
+  format: OutputFormat;
+  outputFile: string;
+  /** Where bare clones are cached between runs. */
+  cacheDir: string;
+  gitPath: string;
+  signal?: AbortSignal;
+  log?: (message: string) => void;
+  onProgress?: (event: ProgressEvent) => void;
+}
+
+export interface CollectResult {
+  /** null when nothing matched (no file is written in that case). */
+  outputFile: string | null;
+  cancelled: boolean;
+  summary: RunSummary;
+  ref: string;
+  headCommit: string;
+  warnings: string[];
+}
+
+export async function collectCommitChanges(opts: CollectOptions): Promise<CollectResult> {
+  const ctx: GitContext = { gitPath: opts.gitPath, signal: opts.signal, log: opts.log };
+  const progress = (event: ProgressEvent) => opts.onProgress?.(event);
+  const warnings: string[] = [];
+
+  const gitVersion = await getGitVersion(ctx);
+  opts.log?.(`Using ${gitVersion.text}`);
+  if (opts.includeMergeCommits && versionLessThan(gitVersion.numbers, [2, 31])) {
+    throw new Error(`Including merge commits requires Git 2.31 or newer (found ${gitVersion.text}).`);
+  }
+
+  const repoDir = await ensureBareClone(ctx, opts.repo, opts.cacheDir, progress, (w) => {
+    warnings.push(w);
+    opts.log?.(`WARNING: ${w}`);
+  });
+  const start = await resolveStartCommit(ctx, repoDir, opts.repo.refHint);
+  opts.log?.(`Reading history of ${start.ref} (${start.sha})`);
+
+  const keywords = opts.keywords.map((k) => k.trim()).filter((k) => k.length > 0);
+  const pathspecs = toPathspecs(opts.fileExtensions);
+  const revFilters: string[] = [];
+  for (const k of keywords) {
+    revFilters.push(`--grep=${k}`);
+  }
+  if (keywords.length > 0) {
+    revFilters.push(opts.useRegex ? '--extended-regexp' : '--fixed-strings');
+    if (!opts.caseSensitive) {
+      revFilters.push('--regexp-ignore-case');
+    }
+  }
+  if (!opts.includeMergeCommits) {
+    revFilters.push('--no-merges');
+  }
+  if (opts.maxCommits > 0) {
+    revFilters.push(`--max-count=${Math.floor(opts.maxCommits)}`);
+  }
+  if (pathspecs.length > 0) {
+    // Without this, history simplification can hide commits from side branches.
+    revFilters.push('--full-history');
+  }
+  const tail = [start.sha, '--', ...pathspecs];
+
+  progress({ stage: 'count' });
+  const total = parseInt(
+    (await runGit(ctx, ['rev-list', '--count', ...revFilters, ...tail], { cwd: repoDir, isolateConfig: true })).trim(),
+    10,
+  );
+  opts.log?.(`${total} matching commit(s)`);
+
+  const metadata = {
+    tool: 'WarnPriority',
+    generatedAt: new Date().toISOString(),
+    repository: {
+      url: opts.repo.webUrl ?? opts.repo.cloneUrl,
+      owner: opts.repo.owner,
+      name: opts.repo.name,
+      ref: start.ref,
+      headCommit: start.sha,
+    },
+    query: {
+      keywords,
+      matchMode: opts.useRegex ? 'regex' : 'substring',
+      caseSensitive: opts.caseSensitive,
+      fileExtensions: opts.fileExtensions,
+      includeMergeCommits: opts.includeMergeCommits,
+      ignoreWhitespace: opts.ignoreWhitespace,
+      maxCommits: opts.maxCommits,
+    },
+    gitVersion: gitVersion.text,
+    changeTypes: {
+      modify: 'existing lines were replaced (deletedCode -> addedCode)',
+      insert: 'lines were added only (addedCode); oldStart is the old line after which they were inserted',
+      delete: 'lines were removed only (deletedCode); newStart is the new line after which they used to be',
+    },
+  };
+
+  const summary: RunSummary = {
+    complete: false,
+    matchedCommits: 0,
+    commitsWithCodeChanges: 0,
+    filesChanged: 0,
+    codeChanges: { modify: 0, insert: 0, delete: 0, total: 0 },
+    linesAdded: 0,
+    linesDeleted: 0,
+    finishedAt: '',
+  };
+  const result: CollectResult = {
+    outputFile: opts.outputFile,
+    cancelled: false,
+    summary,
+    ref: start.ref,
+    headCommit: start.sha,
+    warnings,
+  };
+
+  if (total === 0) {
+    summary.complete = true;
+    summary.finishedAt = new Date().toISOString();
+    result.outputFile = null;
+    return result;
+  }
+
+  const logArgs = [
+    '-c',
+    'core.quotePath=false',
+    '-c',
+    'log.showSignature=false',
+    'log',
+    `--format=${LOG_FORMAT}`,
+    '--encoding=UTF-8',
+    '--patch',
+    // Default context (3 lines) so the edit script matches what GitHub and
+    // `git diff --stat` show; -U0 can make git pick a different alignment.
+    // Context lines are dropped by the parser.
+    '--unified=3',
+    '--find-renames',
+    '--no-color',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    '--root',
+    ...(opts.includeMergeCommits ? ['--diff-merges=first-parent'] : []),
+    ...(opts.ignoreWhitespace ? ['--ignore-all-space'] : []),
+    ...revFilters,
+    ...tail,
+  ];
+
+  const writer = createOutputWriter(opts.format, opts.outputFile, metadata);
+  const commitUrl = opts.repo.webUrl ? (sha: string) => `${opts.repo.webUrl}/commit/${sha}` : () => null;
+  const parser = new GitLogParser(commitUrl);
+  let lastProgressAt = 0;
+
+  const handle = async (commit: ReturnType<GitLogParser['finish']>) => {
+    if (!commit) {
+      return;
+    }
+    summary.matchedCommits++;
+    if (commit.files.length > 0) {
+      summary.commitsWithCodeChanges++;
+      summary.filesChanged += commit.stats.filesChanged;
+      summary.linesAdded += commit.stats.linesAdded;
+      summary.linesDeleted += commit.stats.linesDeleted;
+      summary.codeChanges.modify += commit.stats.modifyBlocks;
+      summary.codeChanges.insert += commit.stats.insertBlocks;
+      summary.codeChanges.delete += commit.stats.deleteBlocks;
+      summary.codeChanges.total += commit.stats.modifyBlocks + commit.stats.insertBlocks + commit.stats.deleteBlocks;
+      await writer.writeCommit(commit);
+    }
+    const now = Date.now();
+    if (now - lastProgressAt > 200 || summary.matchedCommits === total) {
+      lastProgressAt = now;
+      progress({ stage: 'process', done: summary.matchedCommits, total });
+    }
+  };
+
+  try {
+    for await (const line of streamGitLines(ctx, logArgs, { cwd: repoDir, isolateConfig: true })) {
+      await handle(parser.push(line));
+    }
+    await handle(parser.finish());
+    summary.complete = true;
+  } catch (e) {
+    if (e instanceof CancelledError) {
+      result.cancelled = true;
+    } else {
+      await writer.discard().catch(() => undefined);
+      throw e;
+    }
+  }
+
+  summary.finishedAt = new Date().toISOString();
+  if (summary.matchedCommits === 0 && !result.cancelled) {
+    await writer.discard();
+    result.outputFile = null;
+    return result;
+  }
+  await writer.close(summary);
+  return result;
+}
+
+/** "java", ".java", "*.java" -> ":(icase)*.java" (matches at any depth). */
+export function toPathspecs(extensions: string[]): string[] {
+  const specs = new Set<string>();
+  for (const raw of extensions) {
+    const ext = raw.trim().replace(/^\*?\.?/, '');
+    if (ext) {
+      specs.add(`:(icase)*.${ext}`);
+    }
+  }
+  return [...specs];
+}
+
+/** Builds a file name such as "owner_repo_fix-bug_20250101-120000.json". */
+export function defaultOutputFileName(repo: RepoRef, keywords: string[], format: OutputFormat, date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp =
+    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-` +
+    `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  const kw = keywords.map((k) => k.trim()).filter((k) => k).join('-') || 'all';
+  const parts = [repo.owner, repo.name, kw.slice(0, 40), stamp].filter((p): p is string => !!p);
+  return parts.join('_').replace(/[<>:"/\\|?*\x00-\x1f\s]+/g, '_') + `.${format}`;
+}
+
+async function getGitVersion(ctx: GitContext): Promise<{ text: string; numbers: number[] }> {
+  try {
+    const text = (await runGit(ctx, ['--version'])).trim();
+    const m = /(\d+)\.(\d+)(?:\.(\d+))?/.exec(text);
+    return { text, numbers: m ? [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)] : [] };
+  } catch (e) {
+    if (e instanceof GitError || e instanceof CancelledError) {
+      throw e;
+    }
+    throw new Error(`Could not run git: ${(e as Error).message}`);
+  }
+}
+
+function versionLessThan(actual: number[], required: number[]): boolean {
+  for (let i = 0; i < required.length; i++) {
+    const a = actual[i] ?? 0;
+    if (a !== required[i]) {
+      return a < required[i];
+    }
+  }
+  return false;
+}

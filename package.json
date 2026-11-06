@@ -1,0 +1,113 @@
+{
+  "name": "warnpriority",
+  "displayName": "WarnPriority",
+  "description": "%extension.description%",
+  "version": "0.1.0",
+  "publisher": "jungbini",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jungbini/WarnPriority"
+  },
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "github",
+    "commit",
+    "diff",
+    "mining software repositories"
+  ],
+  "main": "./out/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "warnPriority.collectCommitChanges",
+        "title": "%command.collectCommitChanges.title%",
+        "category": "WarnPriority"
+      },
+      {
+        "command": "warnPriority.clearRepositoryCache",
+        "title": "%command.clearRepositoryCache.title%",
+        "category": "WarnPriority"
+      }
+    ],
+    "configuration": {
+      "title": "WarnPriority",
+      "properties": {
+        "warnPriority.outputDirectory": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "%config.outputDirectory%"
+        },
+        "warnPriority.outputFormat": {
+          "type": "string",
+          "enum": [
+            "json",
+            "csv"
+          ],
+          "default": "json",
+          "markdownDescription": "%config.outputFormat%"
+        },
+        "warnPriority.fileExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "%config.fileExtensions%"
+        },
+        "warnPriority.maxCommits": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "%config.maxCommits%"
+        },
+        "warnPriority.caseSensitive": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.caseSensitive%"
+        },
+        "warnPriority.useRegex": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.useRegex%"
+        },
+        "warnPriority.includeMergeCommits": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.includeMergeCommits%"
+        },
+        "warnPriority.ignoreWhitespace": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.ignoreWhitespace%"
+        },
+        "warnPriority.gitPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "%config.gitPath%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node scripts/run-tests.js",
+    "collect": "node ./out/cli.js",
+    "package": "npx --yes @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "~18.19.130",
+    "@types/vscode": "~1.82.0",
+    "typescript": "~5.9.3"
+  }
+}

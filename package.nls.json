@@ -1,0 +1,14 @@
+{
+  "extension.description": "Collects the code changed (modified, inserted, deleted) by GitHub commits whose messages match given keywords.",
+  "command.collectCommitChanges.title": "Collect Changed Code from GitHub Commits",
+  "command.clearRepositoryCache.title": "Clear Cached Repository Clones",
+  "config.outputDirectory": "Folder where result files are saved. Relative paths are resolved against the first workspace folder. Empty: `<workspace>/warnpriority-output` (or a save dialog when no folder is open).",
+  "config.outputFormat": "Result file format. `json`: one object per commit with its changed files and code blocks. `csv`: one row per changed code block.",
+  "config.fileExtensions": "Only collect changes to files with these extensions, e.g. `[\"java\", \"kt\"]`. Empty: all files.",
+  "config.maxCommits": "Maximum number of matching commits to collect (newest first). `0`: no limit.",
+  "config.caseSensitive": "Match commit message keywords case-sensitively.",
+  "config.useRegex": "Treat keywords as POSIX extended regular expressions (e.g. `\\bfix(e[sd])?\\b`) instead of plain text.",
+  "config.includeMergeCommits": "Also collect merge commits (diffed against their first parent). Requires Git 2.31+.",
+  "config.ignoreWhitespace": "Ignore changes that only touch whitespace.",
+  "config.gitPath": "Path to the Git executable. Empty: the Git used by VS Code's Git extension, or `git` on PATH."
+}
