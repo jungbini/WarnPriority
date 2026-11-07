@@ -25,6 +25,8 @@ export interface PmdAnalysisSummary {
   filesAnalyzed: number;
   /** Files skipped because PMD could not parse the before or after version. */
   filesWithErrors: number;
+  /** Rules PMD could not use because of their configuration (logged; the other rules ran). */
+  skippedRules: number;
   removed: number;
   added: number;
   unchanged: number;
@@ -111,12 +113,16 @@ export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnaly
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   }
 
+  for (const e of report.ruleErrors) {
+    opts.log?.(`WARNING: PMD skipped a rule: ${e}`);
+  }
   opts.onProgress?.({ stage: 'compare' });
   const summary: PmdAnalysisSummary = {
     commits: commits.length,
     commitsWithWarningChanges: 0,
     filesAnalyzed: 0,
     filesWithErrors: 0,
+    skippedRules: report.ruleErrors.length,
     removed: 0,
     added: 0,
     unchanged: 0,

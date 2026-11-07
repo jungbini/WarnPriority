@@ -37,5 +37,6 @@
   "{0} files could not be parsed by PMD and were skipped.": "PMD가 파싱하지 못한 파일 {0}개는 건너뛰었습니다.",
   "Currently open file": "현재 열린 파일",
   "Browse...": "찾아보기...",
-  "Select a result file to analyze with PMD": "PMD로 분석할 수집 결과 파일 선택"
+  "Select a result file to analyze with PMD": "PMD로 분석할 수집 결과 파일 선택",
+  "{0} PMD rules were skipped because of their configuration (see the log).": "설정 문제로 PMD 규칙 {0}개는 실행하지 않았습니다(로그 참고)."
 }

@@ -11,7 +11,7 @@
   "config.ignoreWhitespace": "공백만 바뀐 변경은 무시합니다.",
   "config.gitPath": "Git 실행 파일 경로입니다. 비워 두면 VS Code Git 확장이 사용하는 Git 또는 PATH의 `git`을 사용합니다.",
   "command.runPmd.title": "수집 결과를 PMD로 분석",
-  "config.pmd.ruleset": "실행할 PMD 규칙입니다. 규칙 세트(`rulesets/java/quickstart.xml`, PMD 권장 세트), `category/java/errorprone.xml,category/java/bestpractices.xml` 같은 규칙 카테고리, 또는 직접 만든 규칙 세트 XML 경로를 쉼표로 구분해 지정합니다.",
+  "config.pmd.ruleset": "실행할 PMD 규칙입니다. `all`(기본값): PMD Java 규칙 카테고리 8개(Best Practices, Code Style, Design, Documentation, Error Prone, Multithreading, Performance, Security)의 모든 규칙(약 300개). 그 밖에 `rulesets/java/quickstart.xml`(PMD 권장 세트) 같은 규칙 세트, `category/java/errorprone.xml,category/java/bestpractices.xml` 같은 카테고리, 또는 직접 만든 규칙 세트 XML 경로를 쉼표로 구분해 지정할 수 있습니다.",
   "config.pmd.home": "WarnPriority가 Maven Central에서 내려받는 PMD 대신 사용할, 압축을 푼 PMD 7 배포본 폴더(`lib/` 포함)입니다.",
   "config.pmd.java": "PMD를 실행할 Java 실행 파일(Java 8 이상)입니다. 비워 두면 `JAVA_HOME`, VS Code Java 확장의 JDK(`java.jdt.ls.java.home`), PATH의 `java` 순서로 찾습니다."
 }

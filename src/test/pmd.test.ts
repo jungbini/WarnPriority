@@ -12,7 +12,7 @@ import { collectCommitChanges } from '../core/collector';
 import { parseRepositoryInput } from '../core/githubUrl';
 import { MavenArtifact } from '../core/pmdArtifacts';
 import { installPmd, isPmdInstalled, locatePmd, pmdInstallDir } from '../core/pmdInstaller';
-import { fileKey, parsePmdReport } from '../core/pmdRunner';
+import { ALL_RULES, BUNDLED_ALL_RULES, fileKey, parsePmdReport, resolveRuleset } from '../core/pmdRunner';
 
 let tmp: string;
 before(() => {
@@ -38,7 +38,22 @@ test('parsePmdReport reads violations and parse errors', () => {
     { rule: 'R', ruleset: 'Error Prone', priority: 2, line: 3, endLine: 4, message: 'Avoid x' },
   ]);
   assert.equal(report.errors.get(fileKey('/x/before/A.java')), 'ParseException: oops');
-  assert.throws(() => parsePmdReport(JSON.stringify({ configurationErrors: [{ rule: 'X', message: 'unknown rule' }] })), /ruleset error/);
+  assert.deepEqual(report.ruleErrors, []);
+  // A misconfigured rule is reported, not fatal: PMD runs the other rules.
+  const withRuleError = parsePmdReport(JSON.stringify({ files: [], configurationErrors: [{ rule: 'LoosePackageCoupling', message: 'No packages' }] }));
+  assert.deepEqual(withRuleError.ruleErrors, ['LoosePackageCoupling: No packages']);
+});
+
+test('ruleset "all" is the bundled ruleset with every Java category', () => {
+  for (const value of ['all', 'ALL', ' all ', '']) {
+    assert.equal(resolveRuleset(value), BUNDLED_ALL_RULES, JSON.stringify(value));
+  }
+  assert.equal(resolveRuleset('category/java/errorprone.xml'), 'category/java/errorprone.xml');
+  const xml = readFileSync(BUNDLED_ALL_RULES, 'utf8');
+  const categories = [...xml.matchAll(/<rule ref="category\/java\/(\w+)\.xml"/g)].map((m) => m[1]);
+  assert.deepEqual(categories, ['bestpractices', 'codestyle', 'design', 'documentation', 'errorprone', 'multithreading', 'performance', 'security']);
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+  assert.equal(pkg.contributes.configuration.properties['warnPriority.pmd.ruleset'].default, ALL_RULES);
 });
 
 /** Serves `files` (path -> content); paths listed in `fail` answer with the given status. */
@@ -179,7 +194,7 @@ test('analyzeWithPmd finds the warnings a commit fixed and introduced', { skip: 
   const resultFile = path.join(outputDir, 'result.json');
   const result = await analyzeWithPmd({
     resultFile,
-    ruleset: 'category/java/errorprone.xml',
+    ruleset: ALL_RULES,
     javaPath: process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'java') : 'java',
     pmd: { classpath: path.join(pmdHome!, 'lib', '*'), description: 'test' },
   });
@@ -197,4 +212,5 @@ test('analyzeWithPmd finds the warnings a commit fixed and introduced', { skip: 
   assert.deepEqual(file.added, []);
   assert.ok(file.unchanged >= 1, 'the empty catch block moved down two lines but is the same warning');
   assert.equal(result.summary.commitsWithWarningChanges, 1);
+  assert.equal(result.summary.skippedRules, 0, 'every rule of the bundled ruleset runs without extra configuration');
 });

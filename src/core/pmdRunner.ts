@@ -9,7 +9,7 @@ export interface PmdRunOptions {
   /** java executable. */
   javaPath: string;
   classpath: string;
-  /** Comma-separated rulesets / rule categories / ruleset XML paths. */
+  /** "all", or comma-separated rulesets / rule categories / ruleset XML paths. */
   ruleset: string;
   files: string[];
   /** Folder for PMD's file list and report (temporary). */
@@ -23,8 +23,24 @@ export interface PmdReport {
   warnings: Map<string, Warning[]>;
   /** Files PMD could not parse, with the reason. */
   errors: Map<string, string>;
+  /** Rules PMD dropped because of their configuration ("rule: reason"); the others still ran. */
+  ruleErrors: string[];
   pmdVersion: string;
 }
+
+/**
+ * "all" (the default): every rule of PMD's eight Java categories, from the
+ * ruleset shipped with the extension. Anything else is passed to PMD as is.
+ */
+export const ALL_RULES = 'all';
+
+export function resolveRuleset(ruleset: string): string {
+  const r = ruleset.trim();
+  return r === '' || r.toLowerCase() === ALL_RULES ? BUNDLED_ALL_RULES : r;
+}
+
+/** resources/pmd/all-java-rules.xml (this file is out/core/pmdRunner.js). */
+export const BUNDLED_ALL_RULES = path.join(__dirname, '..', '..', 'resources', 'pmd', 'all-java-rules.xml');
 
 /** Map key for a file path (case-insensitive on Windows). */
 export function fileKey(p: string): string {
@@ -50,7 +66,7 @@ export async function runPmd(opts: PmdRunOptions): Promise<PmdReport> {
     '--no-fail-on-violation',
     '--no-fail-on-error',
     '--rulesets',
-    opts.ruleset,
+    resolveRuleset(opts.ruleset),
     '--format',
     'json',
     '--report-file',
@@ -80,9 +96,6 @@ export function parsePmdReport(json: string): PmdReport {
     processingErrors?: { filename: string; message: string }[];
     configurationErrors?: { rule?: string; message: string }[];
   };
-  if (data.configurationErrors?.length) {
-    throw new Error(`PMD ruleset error: ${data.configurationErrors.map((e) => `${e.rule ?? ''} ${e.message}`.trim()).join('; ')}`);
-  }
   const warnings = new Map<string, Warning[]>();
   for (const f of data.files ?? []) {
     warnings.set(
@@ -101,7 +114,8 @@ export function parsePmdReport(json: string): PmdReport {
   for (const e of data.processingErrors ?? []) {
     errors.set(fileKey(e.filename), e.message.split('\n')[0]);
   }
-  return { warnings, errors, pmdVersion: data.pmdVersion ?? '' };
+  const ruleErrors = (data.configurationErrors ?? []).map((e) => (e.rule ? `${e.rule}: ${e.message}` : e.message));
+  return { warnings, errors, ruleErrors, pmdVersion: data.pmdVersion ?? '' };
 }
 
 interface PmdViolation {

@@ -2,7 +2,7 @@
   "name": "warnpriority",
   "displayName": "WarnPriority",
   "description": "%extension.description%",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "jungbini",
   "repository": {
     "type": "git",
@@ -121,7 +121,7 @@
         },
         "warnPriority.pmd.ruleset": {
           "type": "string",
-          "default": "rulesets/java/quickstart.xml",
+          "default": "all",
           "markdownDescription": "%config.pmd.ruleset%"
         },
         "warnPriority.pmd.home": {

@@ -7,6 +7,7 @@ import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirN
 import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { downloadSize, installPmd, locatePmd, PmdLocation } from './core/pmdInstaller';
+import { ALL_RULES } from './core/pmdRunner';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -349,7 +350,7 @@ async function runPmdCommand(context: vscode.ExtensionContext, output: vscode.Ou
         try {
           return await analyzeWithPmd({
             resultFile,
-            ruleset: config.get<string>('pmd.ruleset', 'rulesets/java/quickstart.xml').trim() || 'rulesets/java/quickstart.xml',
+            ruleset: config.get<string>('pmd.ruleset', ALL_RULES),
             javaPath: resolveJava(config),
             pmd,
             signal: controller.signal,
@@ -443,6 +444,10 @@ async function showPmdResult(result: PmdAnalysisResult, output: vscode.OutputCha
   );
   if (s.filesWithErrors > 0) {
     text += ' ' + vscode.l10n.t('{0} files could not be parsed by PMD and were skipped.', s.filesWithErrors);
+  }
+  if (s.skippedRules > 0) {
+    text += ' ' + vscode.l10n.t('{0} PMD rules were skipped because of their configuration (see the log).', s.skippedRules);
+    output.show(true);
   }
   const reveal = vscode.l10n.t('Reveal in File Explorer');
   if ((await vscode.window.showInformationMessage(text, reveal)) === reveal) {

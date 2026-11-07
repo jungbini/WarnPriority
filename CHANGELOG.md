@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- PMD 규칙 기본값을 **모든 Java 규칙**으로 변경: `warnPriority.pmd.ruleset` 기본값 `all` =
+  카테고리 8개(Best Practices, Code Style, Design, Documentation, Error Prone, Multithreading, Performance, Security)의 전체 규칙.
+  확장에 포함된 `resources/pmd/all-java-rules.xml` 사용(설정 없이는 동작하지 않는 `LoosePackageCoupling`만 제외)
+- PMD가 설정 문제로 일부 규칙을 실행하지 못해도 분석을 중단하지 않고, 나머지 규칙 결과를 기록하며 알림·로그로 알려 줌
+- CLI: `--ruleset` 기본값도 `all`
+
 ## 0.7.0
 
 - **PMD 분석**: `WarnPriority: 수집 결과를 PMD로 분석` 명령(수집 완료 알림의 **PMD로 분석** 버튼, 탐색기 우클릭).

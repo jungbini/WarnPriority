@@ -7,7 +7,7 @@
  *        [--ext java,py] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
  *        [--cache <dir>] [--git <path>]
  *
- *   node out/cli.js pmd <result.json> [--ruleset rulesets/java/quickstart.xml] [--pmd-home dir] [--java path]
+ *   node out/cli.js pmd <result.json> [--ruleset all|rulesets/java/quickstart.xml|...] [--pmd-home dir] [--java path]
  *        Runs PMD on the saved before/after files and writes <result>.pmd.json.
  */
 import * as os from 'os';
@@ -17,6 +17,7 @@ import { analyzeWithPmd } from './core/analyzeWithPmd';
 import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { installPmd, locatePmd } from './core/pmdInstaller';
+import { ALL_RULES } from './core/pmdRunner';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -40,7 +41,7 @@ function usage(): never {
       '  <keywords> is a comma-separated list; use "" to collect every commit.\n' +
       '  --ext defaults to source files of static-analyzable languages.\n' +
       '\n' +
-      '       node out/cli.js pmd <result.json> [--ruleset rulesets/java/quickstart.xml] [--pmd-home dir] [--java path]\n' +
+      '       node out/cli.js pmd <result.json> [--ruleset all|<rulesets>] [--pmd-home dir] [--java path]\n' +
       '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.',
   );
   process.exit(2);
@@ -139,7 +140,7 @@ async function runPmdCommand(resultFile: string, flags: Record<string, string | 
   }
   const result = await analyzeWithPmd({
     resultFile,
-    ruleset: (flags.ruleset as string) ?? 'rulesets/java/quickstart.xml',
+    ruleset: (flags.ruleset as string) ?? ALL_RULES,
     javaPath: (flags.java as string) ?? defaultJava(),
     pmd,
     signal: controller.signal,
@@ -150,7 +151,8 @@ async function runPmdCommand(resultFile: string, flags: Record<string, string | 
   console.log(
     `Done: warnings changed in ${s.commitsWithWarningChanges}/${s.commits} commits: ${s.removed} disappeared, ${s.added} appeared, ` +
       `${s.unchanged} unchanged` +
-      (s.filesWithErrors > 0 ? `; ${s.filesWithErrors} files could not be parsed` : ''),
+      (s.filesWithErrors > 0 ? `; ${s.filesWithErrors} files could not be parsed` : '') +
+      (s.skippedRules > 0 ? `; ${s.skippedRules} rules skipped because of their configuration` : ''),
   );
   console.log(result.outputFile);
 }

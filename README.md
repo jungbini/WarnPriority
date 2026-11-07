@@ -155,7 +155,11 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 
 참고
 - 분석 대상은 바뀐 `.java` 파일뿐이고(프로젝트 전체가 아님), 빌드 없이 실행하므로 클래스패스가 없습니다. 타입 정보가 필요한 일부 PMD 규칙은 정확도가 떨어질 수 있습니다.
-- 규칙은 `warnPriority.pmd.ruleset`으로 바꿉니다. 기본값은 PMD 권장 세트 `rulesets/java/quickstart.xml`입니다. 예: `category/java/errorprone.xml,category/java/bestpractices.xml`, 또는 직접 만든 XML.
+- **규칙**: 기본값 `all`은 PMD Java 규칙 카테고리 8개(Best Practices, Code Style, Design, Documentation, Error Prone, Multithreading, Performance, Security)의 **모든 규칙**(약 300개)을 실행합니다.
+  확장에 포함된 [`resources/pmd/all-java-rules.xml`](resources/pmd/all-java-rules.xml)을 쓰며, 프로젝트별 설정 없이는 동작하지 않는 `LoosePackageCoupling`(검사할 패키지를 지정해야 함)만 뺐습니다.
+  Code Style·Documentation warning이 많이 나오므로(google/gson `fix, bug`: 변화 16,362건 중 약 3/4), 필요하면 `warnPriority.pmd.ruleset`으로 좁히세요.
+  예: PMD 권장 세트 `rulesets/java/quickstart.xml`, 카테고리 `category/java/errorprone.xml,category/java/bestpractices.xml`, 또는 직접 만든 XML.
+- 설정 문제로 PMD가 실행하지 못한 규칙이 있으면 나머지 규칙으로 분석을 계속하고, 그 사실을 알림과 출력 창 로그에 남깁니다.
 
 ## 설정
 
@@ -168,7 +172,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | `warnPriority.useRegex` | `false` | 키워드를 정규식(POSIX 확장)으로 처리 |
 | `warnPriority.includeMergeCommits` | `false` | 머지 커밋 포함(첫 번째 부모 기준 diff, Git 2.31+) |
 | `warnPriority.ignoreWhitespace` | `false` | 공백만 바뀐 변경 무시 |
-| `warnPriority.pmd.ruleset` | `rulesets/java/quickstart.xml` | 실행할 PMD 규칙(세트·카테고리·XML 경로, 쉼표 구분) |
+| `warnPriority.pmd.ruleset` | `all` | 실행할 PMD 규칙. `all`: Java 규칙 전부. 또는 세트·카테고리·XML 경로(쉼표 구분) |
 | `warnPriority.pmd.home` | `""` | 이미 설치한 PMD 7 폴더(`lib/` 포함). 비우면 자동으로 내려받은 PMD 사용 |
 | `warnPriority.pmd.java` | `""` | PMD를 실행할 Java 실행 파일 |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
@@ -249,7 +253,7 @@ src/
    ├─ blobReader.ts    git cat-file --batch 로 파일 내용 읽기
    ├─ pmdArtifacts.ts  PMD jar 목록(버전·SHA-256 고정)
    ├─ pmdInstaller.ts  PMD 내려받기·검증·설치
-   ├─ pmdRunner.ts     PMD 실행, JSON 리포트 읽기
+   ├─ pmdRunner.ts     PMD 실행, JSON 리포트 읽기 (ruleset "all" → resources/pmd/all-java-rules.xml)
    ├─ warningDiff.ts   커밋 전후 warning 대응(분석기와 무관)
    ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json
    ├─ collector.ts     전체 파이프라인
