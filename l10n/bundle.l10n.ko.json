@@ -1,5 +1,4 @@
 {
-  "A collection is already running. Wait for it to finish or cancel it.": "이미 수집 작업이 실행 중입니다. 완료되거나 취소될 때까지 기다려 주세요.",
   "Collect changed code (1/2): GitHub repository": "변경 코드 수집 (1/2): GitHub 저장소",
   "Enter the GitHub repository address": "GitHub 저장소 주소를 입력하세요",
   "Enter a repository address, e.g. https://github.com/owner/repo": "저장소 주소를 입력하세요. 예: https://github.com/owner/repo",
@@ -23,5 +22,20 @@
   "Delete {0} cached repository clone(s)? They will be downloaded again on the next run.": "캐시된 저장소 복제본 {0}개를 삭제할까요? 다음 실행 시 다시 다운로드됩니다.",
   "Repository cache cleared.": "저장소 캐시를 삭제했습니다.",
   "Select a folder to save the results in": "결과를 저장할 폴더 선택",
-  "Save Here": "여기에 저장"
+  "Save Here": "여기에 저장",
+  "Another WarnPriority task is running. Wait for it to finish or cancel it.": "다른 WarnPriority 작업이 실행 중입니다. 완료되거나 취소될 때까지 기다려 주세요.",
+  "Analyze with PMD": "PMD로 분석",
+  "Select a result JSON written by \"Collect Changed Code\", not a .pmd.json file.": ".pmd.json이 아닌, 변경 코드 수집으로 만든 결과 JSON을 선택하세요.",
+  "Running PMD on {0} files...": "PMD로 파일 {0}개 분석 중...",
+  "Comparing warnings before and after each commit...": "커밋 전후 warning 비교 중...",
+  "PMD analysis cancelled.": "PMD 분석이 취소되었습니다.",
+  "WarnPriority: PMD analysis failed. {0}": "WarnPriority: PMD 분석에 실패했습니다. {0}",
+  "Download": "내려받기",
+  "PMD {0} is needed to analyze the files. Download it from Maven Central now ({1} MB, only once)?": "파일을 분석하려면 PMD {0}이(가) 필요합니다. 지금 Maven Central에서 내려받을까요? ({1} MB, 최초 1회)",
+  "Downloading PMD {0}": "PMD {0} 내려받는 중",
+  "PMD: warnings changed in {0} of {1} commits ({2} disappeared, {3} appeared, {4} unchanged). Saved to {5}.": "PMD: 커밋 {1}개 중 {0}개에서 warning이 바뀌었습니다(사라짐 {2}, 생김 {3}, 유지 {4}). {5}에 저장했습니다.",
+  "{0} files could not be parsed by PMD and were skipped.": "PMD가 파싱하지 못한 파일 {0}개는 건너뛰었습니다.",
+  "Currently open file": "현재 열린 파일",
+  "Browse...": "찾아보기...",
+  "Select a result file to analyze with PMD": "PMD로 분석할 수집 결과 파일 선택"
 }

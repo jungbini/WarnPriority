@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- **PMD 분석**: `WarnPriority: 수집 결과를 PMD로 분석` 명령(수집 완료 알림의 **PMD로 분석** 버튼, 탐색기 우클릭).
+  커밋별 수정 전/후 파일에 PMD를 실행해, 사라진 warning(`removed`)과 새로 생긴 warning(`added`), 유지된 warning 수(`unchanged`)를
+  `<결과>.pmd.json`에 저장. 바뀌지 않은 줄은 줄 번호 보정, 바뀐 줄은 같은 변경 블록 안에서 같은 규칙끼리 대응
+- PMD 7.29.0을 처음 사용할 때 동의를 받고 Maven Central(실패 시 Google 미러)에서 내려받아 SHA-256 검증 후 설치.
+  설정: `warnPriority.pmd.ruleset`, `warnPriority.pmd.home`, `warnPriority.pmd.java`
+- CLI: `node out/cli.js pmd <result.json>`
+
 ## 0.6.0
 
 - 소스 코드가 아닌 파일(XML, README 등)이 결과에 들어가지 않도록 "모든 파일 수집" 모드를 제거:

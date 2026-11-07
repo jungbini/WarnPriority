@@ -6,11 +6,17 @@
  *   node out/cli.js https://github.com/owner/repo "fix,bug" [--out-dir dir]
  *        [--ext java,py] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
  *        [--cache <dir>] [--git <path>]
+ *
+ *   node out/cli.js pmd <result.json> [--ruleset rulesets/java/quickstart.xml] [--pmd-home dir] [--java path]
+ *        Runs PMD on the saved before/after files and writes <result>.pmd.json.
  */
 import * as os from 'os';
 import * as path from 'path';
 import { collectCommitChanges, defaultOutputFileName, projectDirName, SOURCE_FILE_EXTENSIONS } from './core/collector';
+import { analyzeWithPmd } from './core/analyzeWithPmd';
 import { CancelledError } from './core/git';
+import { PMD_VERSION } from './core/pmdArtifacts';
+import { installPmd, locatePmd } from './core/pmdInstaller';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -32,7 +38,10 @@ function usage(): never {
     'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java,py] [--max N]\n' +
       '                         [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--cache dir] [--git path]\n' +
       '  <keywords> is a comma-separated list; use "" to collect every commit.\n' +
-      '  --ext defaults to source files of static-analyzable languages.',
+      '  --ext defaults to source files of static-analyzable languages.\n' +
+      '\n' +
+      '       node out/cli.js pmd <result.json> [--ruleset rulesets/java/quickstart.xml] [--pmd-home dir] [--java path]\n' +
+      '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.',
   );
   process.exit(2);
 }
@@ -55,6 +64,13 @@ async function main(): Promise<void> {
     } else {
       positional.push(a);
     }
+  }
+  if (positional[0] === 'pmd') {
+    if (positional.length < 2) {
+      usage();
+    }
+    await runPmdCommand(path.resolve(positional[1]), flags);
+    return;
   }
   if (positional.length < 2) {
     usage();
@@ -102,6 +118,45 @@ async function main(): Promise<void> {
       `${s.savedFiles} before/after files saved`,
   );
   console.log(result.outputFile);
+}
+
+async function runPmdCommand(resultFile: string, flags: Record<string, string | boolean>): Promise<void> {
+  const controller = new AbortController();
+  process.on('SIGINT', () => controller.abort());
+  const quiet = flags.quiet === true;
+  const log = quiet ? undefined : (m: string) => console.error(m);
+  const storageDir = path.join(os.homedir(), '.warnpriority');
+
+  let pmd = await locatePmd(typeof flags['pmd-home'] === 'string' ? path.resolve(flags['pmd-home']) : '', storageDir);
+  if (!pmd) {
+    console.error(`Downloading PMD ${PMD_VERSION} from Maven Central...`);
+    pmd = await installPmd(storageDir, {
+      signal: controller.signal,
+      log,
+      onProgress: quiet ? undefined : (done, total) => process.stderr.write(`\r\x1b[K${(done / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`),
+    });
+    process.stderr.write('\n');
+  }
+  const result = await analyzeWithPmd({
+    resultFile,
+    ruleset: (flags.ruleset as string) ?? 'rulesets/java/quickstart.xml',
+    javaPath: (flags.java as string) ?? defaultJava(),
+    pmd,
+    signal: controller.signal,
+    log,
+    onProgress: (e) => log?.(e.stage === 'pmd' ? `Running PMD on ${e.files} files...` : 'Comparing warnings...'),
+  });
+  const s = result.summary;
+  console.log(
+    `Done: warnings changed in ${s.commitsWithWarningChanges}/${s.commits} commits: ${s.removed} disappeared, ${s.added} appeared, ` +
+      `${s.unchanged} unchanged` +
+      (s.filesWithErrors > 0 ? `; ${s.filesWithErrors} files could not be parsed` : ''),
+  );
+  console.log(result.outputFile);
+}
+
+function defaultJava(): string {
+  return process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : 'java';
 }
 
 main().catch((e) => {

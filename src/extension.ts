@@ -1,9 +1,12 @@
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { analyzeWithPmd, PmdAnalysisResult } from './core/analyzeWithPmd';
 import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName, SOURCE_FILE_EXTENSIONS } from './core/collector';
 import { CancelledError } from './core/git';
+import { PMD_VERSION } from './core/pmdArtifacts';
+import { downloadSize, installPmd, locatePmd, PmdLocation } from './core/pmdInstaller';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -18,6 +21,7 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
     vscode.commands.registerCommand('warnPriority.collectCommitChanges', () => runCollect(context, output)),
     vscode.commands.registerCommand('warnPriority.clearRepositoryCache', () => clearCache(context, output)),
+    vscode.commands.registerCommand('warnPriority.runPmd', (uri?: vscode.Uri) => runPmdCommand(context, output, uri)),
   );
 }
 
@@ -27,7 +31,7 @@ export function deactivate(): void {
 
 async function runCollect(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
   if (running) {
-    vscode.window.showWarningMessage(vscode.l10n.t('A collection is already running. Wait for it to finish or cancel it.'));
+    vscode.window.showWarningMessage(vscode.l10n.t('Another WarnPriority task is running. Wait for it to finish or cancel it.'));
     return;
   }
 
@@ -202,11 +206,14 @@ async function showResult(result: CollectResult, keywords: string[], output: vsc
         summary.savedFiles,
         folder,
       );
+  const analyze = vscode.l10n.t('Analyze with PMD');
   const reveal = vscode.l10n.t('Reveal in File Explorer');
   const choice = result.cancelled
-    ? await vscode.window.showWarningMessage(text, reveal)
-    : await vscode.window.showInformationMessage(text, reveal);
-  if (choice === reveal) {
+    ? await vscode.window.showWarningMessage(text, analyze, reveal)
+    : await vscode.window.showInformationMessage(text, analyze, reveal);
+  if (choice === analyze) {
+    await vscode.commands.executeCommand('warnPriority.runPmd', uri);
+  } else if (choice === reveal) {
     await vscode.commands.executeCommand('revealFileInOS', uri);
   }
 }
@@ -218,13 +225,8 @@ async function showResult(result: CollectResult, keywords: string[], output: vsc
  * Without a workspace the user picks a folder.
  */
 async function chooseOutputRoot(config: vscode.WorkspaceConfiguration): Promise<string | undefined> {
-  const workspaceDir = vscode.workspace.workspaceFolders?.find((f) => f.uri.scheme === 'file')?.uri.fsPath;
-  let dir = config.get<string>('outputDirectory', '').trim();
-  if (dir.startsWith('~')) {
-    dir = path.join(os.homedir(), dir.slice(1));
-  }
-
-  if (!dir && !workspaceDir) {
+  const dir = configuredOutputRoot(config);
+  if (!dir) {
     const picked = await vscode.window.showOpenDialog({
       title: vscode.l10n.t('Select a folder to save the results in'),
       openLabel: vscode.l10n.t('Save Here'),
@@ -235,13 +237,23 @@ async function chooseOutputRoot(config: vscode.WorkspaceConfiguration): Promise<
     });
     return picked?.[0]?.fsPath;
   }
-  if (!dir) {
-    dir = path.join(workspaceDir!, 'warnpriority-output');
+  if (!config.get<string>('outputDirectory', '').trim()) {
     await keepOutOfGit(dir);
-  } else if (!path.isAbsolute(dir)) {
-    dir = path.join(workspaceDir ?? os.homedir(), dir);
   }
   return dir;
+}
+
+/** The output root from the settings / workspace, or undefined when neither is available. */
+function configuredOutputRoot(config: vscode.WorkspaceConfiguration): string | undefined {
+  const workspaceDir = vscode.workspace.workspaceFolders?.find((f) => f.uri.scheme === 'file')?.uri.fsPath;
+  let dir = config.get<string>('outputDirectory', '').trim();
+  if (dir.startsWith('~')) {
+    dir = path.join(os.homedir(), dir.slice(1));
+  }
+  if (!dir) {
+    return workspaceDir ? path.join(workspaceDir, 'warnpriority-output') : undefined;
+  }
+  return path.isAbsolute(dir) ? dir : path.join(workspaceDir ?? os.homedir(), dir);
 }
 
 /**
@@ -279,7 +291,7 @@ async function resolveGitPath(config: vscode.WorkspaceConfiguration): Promise<st
 
 async function clearCache(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
   if (running) {
-    vscode.window.showWarningMessage(vscode.l10n.t('A collection is already running. Wait for it to finish or cancel it.'));
+    vscode.window.showWarningMessage(vscode.l10n.t('Another WarnPriority task is running. Wait for it to finish or cancel it.'));
     return;
   }
   const dir = path.join(context.globalStorageUri.fsPath, 'repos');
@@ -300,4 +312,211 @@ async function clearCache(context: vscode.ExtensionContext, output: vscode.Outpu
   await fs.rm(dir, { recursive: true, force: true });
   output.appendLine(`Cleared repository cache: ${dir}`);
   vscode.window.showInformationMessage(vscode.l10n.t('Repository cache cleared.'));
+}
+
+/**
+ * Runs PMD on the before/after files of a result JSON and writes
+ * <result>.pmd.json with the warnings that disappeared or appeared.
+ */
+async function runPmdCommand(context: vscode.ExtensionContext, output: vscode.OutputChannel, uri?: vscode.Uri): Promise<void> {
+  if (running) {
+    vscode.window.showWarningMessage(vscode.l10n.t('Another WarnPriority task is running. Wait for it to finish or cancel it.'));
+    return;
+  }
+  const config = vscode.workspace.getConfiguration('warnPriority');
+  const resultFile = uri?.scheme === 'file' ? uri.fsPath : await pickResultFile(config);
+  if (!resultFile) {
+    return;
+  }
+  if (/\.pmd\.json$/i.test(resultFile)) {
+    vscode.window.showErrorMessage(vscode.l10n.t('Select a result JSON written by "Collect Changed Code", not a .pmd.json file.'));
+    return;
+  }
+
+  running = true;
+  output.appendLine(`[${new Date().toLocaleString()}] WarnPriority v${context.extension.packageJSON.version} | PMD analysis of ${resultFile}`);
+  try {
+    const pmd = await ensurePmd(context, config, output);
+    if (!pmd) {
+      return;
+    }
+    output.appendLine(`Using ${pmd.description}`);
+    const result = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'WarnPriority: PMD', cancellable: true },
+      async (progress, token) => {
+        const controller = new AbortController();
+        const sub = token.onCancellationRequested(() => controller.abort());
+        try {
+          return await analyzeWithPmd({
+            resultFile,
+            ruleset: config.get<string>('pmd.ruleset', 'rulesets/java/quickstart.xml').trim() || 'rulesets/java/quickstart.xml',
+            javaPath: resolveJava(config),
+            pmd,
+            signal: controller.signal,
+            log: (m) => output.appendLine(m),
+            onProgress: (e) =>
+              progress.report({
+                message:
+                  e.stage === 'pmd'
+                    ? vscode.l10n.t('Running PMD on {0} files...', e.files)
+                    : vscode.l10n.t('Comparing warnings before and after each commit...'),
+              }),
+          });
+        } finally {
+          sub.dispose();
+        }
+      },
+    );
+    running = false;
+    await showPmdResult(result, output);
+  } catch (e) {
+    if (e instanceof CancelledError) {
+      vscode.window.showInformationMessage(vscode.l10n.t('PMD analysis cancelled.'));
+      return;
+    }
+    const message = (e as Error).message;
+    output.appendLine(`ERROR: ${message}`);
+    const showLog = vscode.l10n.t('Show Log');
+    if ((await vscode.window.showErrorMessage(vscode.l10n.t('WarnPriority: PMD analysis failed. {0}', message.split('\n')[0]), showLog)) === showLog) {
+      output.show();
+    }
+  } finally {
+    running = false;
+  }
+}
+
+/** The configured PMD, the downloaded one, or a fresh download (after asking). */
+async function ensurePmd(context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration, output: vscode.OutputChannel): Promise<PmdLocation | undefined> {
+  const storageDir = context.globalStorageUri.fsPath;
+  const found = await locatePmd(config.get<string>('pmd.home', '').trim(), storageDir);
+  if (found) {
+    return found;
+  }
+  const mb = (bytes: number) => (bytes / 1048576).toFixed(1);
+  const download = vscode.l10n.t('Download');
+  const choice = await vscode.window.showInformationMessage(
+    vscode.l10n.t('PMD {0} is needed to analyze the files. Download it from Maven Central now ({1} MB, only once)?', PMD_VERSION, mb(downloadSize())),
+    { modal: true },
+    download,
+  );
+  if (choice !== download) {
+    return undefined;
+  }
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Downloading PMD {0}', PMD_VERSION), cancellable: true },
+    async (progress, token) => {
+      const controller = new AbortController();
+      const sub = token.onCancellationRequested(() => controller.abort());
+      let reported = 0;
+      try {
+        return await installPmd(storageDir, {
+          signal: controller.signal,
+          log: (m) => output.appendLine(m),
+          onProgress: (done, total) => {
+            const percent = (100 * done) / total;
+            progress.report({ message: `${mb(done)} / ${mb(total)} MB`, increment: Math.max(0, percent - reported) });
+            reported = Math.max(reported, percent);
+          },
+        });
+      } finally {
+        sub.dispose();
+      }
+    },
+  );
+}
+
+async function showPmdResult(result: PmdAnalysisResult, output: vscode.OutputChannel): Promise<void> {
+  const s = result.summary;
+  output.appendLine(JSON.stringify(s));
+  const uri = vscode.Uri.file(result.outputFile);
+  await Promise.resolve(vscode.commands.executeCommand('vscode.open', uri, { preview: false })).catch((e: Error) =>
+    output.appendLine(`Could not open ${result.outputFile}: ${e.message}`),
+  );
+  let text = vscode.l10n.t(
+    'PMD: warnings changed in {0} of {1} commits ({2} disappeared, {3} appeared, {4} unchanged). Saved to {5}.',
+    s.commitsWithWarningChanges,
+    s.commits,
+    s.removed,
+    s.added,
+    s.unchanged,
+    path.basename(result.outputFile),
+  );
+  if (s.filesWithErrors > 0) {
+    text += ' ' + vscode.l10n.t('{0} files could not be parsed by PMD and were skipped.', s.filesWithErrors);
+  }
+  const reveal = vscode.l10n.t('Reveal in File Explorer');
+  if ((await vscode.window.showInformationMessage(text, reveal)) === reveal) {
+    await vscode.commands.executeCommand('revealFileInOS', uri);
+  }
+}
+
+/** Lets the user pick a result JSON: the open one, recent ones in the output folder, or any file. */
+async function pickResultFile(config: vscode.WorkspaceConfiguration): Promise<string | undefined> {
+  type Item = vscode.QuickPickItem & { file?: string };
+  const items: Item[] = [];
+  const active = vscode.window.activeTextEditor?.document.uri;
+  if (active?.scheme === 'file' && /\.json$/i.test(active.fsPath) && !/\.pmd\.json$/i.test(active.fsPath)) {
+    items.push({ label: path.basename(active.fsPath), description: vscode.l10n.t('Currently open file'), file: active.fsPath });
+  }
+  const root = configuredOutputRoot(config);
+  if (root) {
+    for (const f of await findResultFiles(root)) {
+      if (f.file !== items[0]?.file) {
+        items.push({ label: path.basename(f.file), description: path.basename(path.dirname(f.file)), detail: f.mtime.toLocaleString(), file: f.file });
+      }
+    }
+  }
+  const browse: Item = { label: `$(folder-opened) ${vscode.l10n.t('Browse...')}` };
+  let picked: Item | undefined = browse;
+  if (items.length > 0) {
+    picked = await vscode.window.showQuickPick([...items, browse], { title: vscode.l10n.t('Select a result file to analyze with PMD'), matchOnDescription: true });
+  }
+  if (!picked) {
+    return undefined;
+  }
+  if (picked.file) {
+    return picked.file;
+  }
+  const uris = await vscode.window.showOpenDialog({
+    title: vscode.l10n.t('Select a result file to analyze with PMD'),
+    canSelectMany: false,
+    filters: { JSON: ['json'] },
+    defaultUri: root ? vscode.Uri.file(root) : undefined,
+  });
+  return uris?.[0]?.fsPath;
+}
+
+/** Result JSONs in <root>/<project>/, newest first. */
+async function findResultFiles(root: string): Promise<{ file: string; mtime: Date }[]> {
+  const found: { file: string; mtime: Date }[] = [];
+  for (const project of await fs.readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (!project.isDirectory()) {
+      continue;
+    }
+    const dir = path.join(root, project.name);
+    for (const name of await fs.readdir(dir).catch(() => [] as string[])) {
+      if (/\.json$/i.test(name) && !/\.pmd\.json$/i.test(name)) {
+        const stat = await fs.stat(path.join(dir, name)).catch(() => null);
+        if (stat?.isFile()) {
+          found.push({ file: path.join(dir, name), mtime: stat.mtime });
+        }
+      }
+    }
+  }
+  return found.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+}
+
+/** warnPriority.pmd.java, else JAVA_HOME, else the JDK configured for VS Code's Java extension, else "java". */
+function resolveJava(config: vscode.WorkspaceConfiguration): string {
+  const exe = process.platform === 'win32' ? 'java.exe' : 'java';
+  const configured = config.get<string>('pmd.java', '').trim();
+  if (configured) {
+    return configured;
+  }
+  for (const home of [process.env.JAVA_HOME, vscode.workspace.getConfiguration('java').get<string>('jdt.ls.java.home')]) {
+    if (home && existsSync(path.join(home, 'bin', exe))) {
+      return path.join(home, 'bin', exe);
+    }
+  }
+  return 'java';
 }

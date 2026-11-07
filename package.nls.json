@@ -9,5 +9,9 @@
   "config.useRegex": "Treat keywords as POSIX extended regular expressions (e.g. `\\bfix(e[sd])?\\b`) instead of plain text.",
   "config.includeMergeCommits": "Also collect merge commits (diffed against their first parent). Requires Git 2.31+.",
   "config.ignoreWhitespace": "Ignore changes that only touch whitespace.",
-  "config.gitPath": "Path to the Git executable. Empty: the Git used by VS Code's Git extension, or `git` on PATH."
+  "config.gitPath": "Path to the Git executable. Empty: the Git used by VS Code's Git extension, or `git` on PATH.",
+  "command.runPmd.title": "Analyze Collected Results with PMD",
+  "config.pmd.ruleset": "PMD rules to run: a ruleset (`rulesets/java/quickstart.xml`, PMD's recommended set), rule categories such as `category/java/errorprone.xml,category/java/bestpractices.xml`, or the path of your own ruleset XML. Separate several with commas.",
+  "config.pmd.home": "Folder of an unpacked PMD 7 distribution (containing `lib/`) to use instead of the PMD that WarnPriority downloads from Maven Central.",
+  "config.pmd.java": "Java executable used to run PMD (Java 8 or newer). Empty: `JAVA_HOME`, then the JDK of VS Code's Java extension (`java.jdt.ls.java.home`), then `java` on PATH."
 }

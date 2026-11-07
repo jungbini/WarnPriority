@@ -2,7 +2,7 @@
   "name": "warnpriority",
   "displayName": "WarnPriority",
   "description": "%extension.description%",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "jungbini",
   "repository": {
     "type": "git",
@@ -34,6 +34,11 @@
       {
         "command": "warnPriority.clearRepositoryCache",
         "title": "%command.clearRepositoryCache.title%",
+        "category": "WarnPriority"
+      },
+      {
+        "command": "warnPriority.runPmd",
+        "title": "%command.runPmd.title%",
         "category": "WarnPriority"
       }
     ],
@@ -113,8 +118,34 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "%config.gitPath%"
+        },
+        "warnPriority.pmd.ruleset": {
+          "type": "string",
+          "default": "rulesets/java/quickstart.xml",
+          "markdownDescription": "%config.pmd.ruleset%"
+        },
+        "warnPriority.pmd.home": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "%config.pmd.home%"
+        },
+        "warnPriority.pmd.java": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "%config.pmd.java%"
         }
       }
+    },
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "warnPriority.runPmd",
+          "when": "resourceExtname == .json",
+          "group": "9_warnPriority"
+        }
+      ]
     }
   },
   "scripts": {

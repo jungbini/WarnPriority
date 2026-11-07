@@ -111,6 +111,52 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 - 바이너리 파일, 내용 변경 없는 이름 변경/권한 변경, 서브모듈 변경은 코드 변경이 없으므로 제외됩니다.
 - 중간에 취소해도 그때까지 수집한 커밋은 올바른 JSON 배열로 저장되고, JSON에 있는 커밋은 모두 커밋 폴더가 있습니다.
 
+## PMD로 warning 변화 분석
+
+수집한 커밋의 수정 전/후 파일에 [PMD](https://pmd.github.io/)를 실행해, 커밋으로 **사라진 warning**과 **새로 생긴 warning**을 기록합니다.
+
+1. 수집이 끝나면 알림의 **PMD로 분석** 버튼을 누릅니다. 나중에 하려면 명령 팔레트에서 **`WarnPriority: 수집 결과를 PMD로 분석`**을 실행하거나, 탐색기에서 결과 JSON을 우클릭합니다.
+2. 처음 한 번은 PMD 7.29.0(Java 분석 모듈, 약 13 MB)을 Maven Central에서 내려받을지 묻습니다.
+   jar마다 고정된 SHA-256으로 검증한 뒤 확장 저장 공간에 설치합니다. Maven Central이 응답하지 않으면 Google의 Maven Central 미러를 씁니다.
+   이미 설치한 PMD가 있으면 `warnPriority.pmd.home`에 지정합니다.
+3. **Java 8 이상**이 필요합니다(`warnPriority.pmd.java` → `JAVA_HOME` → VS Code Java 확장의 JDK → PATH의 `java` 순으로 찾음).
+4. 결과는 수집 결과 옆에 `<결과 파일 이름>.pmd.json`으로 저장되고 바로 열립니다.
+
+```json
+[
+  {
+    "sha": "d8697083ce09f1c2cdd4fcd041577aa952408039",
+    "files": [
+      {
+        "file": "common/src/main/java/.../ScreensaverManager.java",
+        "removed": [
+          { "rule": "UnusedPrivateMethod", "ruleset": "Best Practices", "priority": 3, "line": 380, "endLine": 380, "message": "Avoid unused private methods such as 'hideDimOverlay()'.", "onChangedLine": false }
+        ],
+        "added": [],
+        "unchanged": 0
+      }
+    ]
+  }
+]
+```
+
+| 필드 | 내용 |
+| --- | --- |
+| `removed` | 커밋 전 파일에 있었는데 커밋 후 사라진 warning (`line`은 **수정 전** 파일 기준) |
+| `added` | 커밋 후 새로 생긴 warning (`line`은 **수정 후** 파일 기준) |
+| `unchanged` | 커밋 전후 모두 있는 warning 수 |
+| `rule` / `ruleset` / `priority` | PMD 규칙 이름 / 카테고리 / 우선순위(1 높음 … 5 낮음) |
+| `onChangedLine` | warning 범위(`line`~`endLine`)에 커밋이 바꾼 줄이 포함되는지. `false`로 사라진 warning은 다른 곳의 변경으로 해결된 경우입니다(예: 안 쓰던 private 메서드를 다른 곳에서 호출하기 시작) |
+| `error` | PMD가 수정 전/후 파일을 파싱하지 못해 비교하지 않은 경우의 이유 |
+
+**같은 warning으로 보는 기준**: 같은 규칙의 warning이 대응하는 위치에 있으면 유지된 것으로 봅니다.
+바뀌지 않은 줄은 줄 번호가 밀린 만큼 보정하고, 바뀐 줄은 같은 변경 블록 안에서 찾습니다(메시지까지 같은 것을 먼저 대응).
+코드가 파일의 다른 위치로 옮겨지면 사라짐+생김으로 기록됩니다.
+
+참고
+- 분석 대상은 바뀐 `.java` 파일뿐이고(프로젝트 전체가 아님), 빌드 없이 실행하므로 클래스패스가 없습니다. 타입 정보가 필요한 일부 PMD 규칙은 정확도가 떨어질 수 있습니다.
+- 규칙은 `warnPriority.pmd.ruleset`으로 바꿉니다. 기본값은 PMD 권장 세트 `rulesets/java/quickstart.xml`입니다. 예: `category/java/errorprone.xml,category/java/bestpractices.xml`, 또는 직접 만든 XML.
+
 ## 설정
 
 | 설정 | 기본값 | 설명 |
@@ -122,6 +168,9 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | `warnPriority.useRegex` | `false` | 키워드를 정규식(POSIX 확장)으로 처리 |
 | `warnPriority.includeMergeCommits` | `false` | 머지 커밋 포함(첫 번째 부모 기준 diff, Git 2.31+) |
 | `warnPriority.ignoreWhitespace` | `false` | 공백만 바뀐 변경 무시 |
+| `warnPriority.pmd.ruleset` | `rulesets/java/quickstart.xml` | 실행할 PMD 규칙(세트·카테고리·XML 경로, 쉼표 구분) |
+| `warnPriority.pmd.home` | `""` | 이미 설치한 PMD 7 폴더(`lib/` 포함). 비우면 자동으로 내려받은 PMD 사용 |
+| `warnPriority.pmd.java` | `""` | PMD를 실행할 Java 실행 파일 |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
 
 
@@ -171,6 +220,14 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
 
   옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
+- PMD 분석도 CLI로 실행할 수 있습니다(PMD는 `~/.warnpriority/pmd`에 내려받음):
+
+  ```bash
+  npm run collect -- pmd results/google_gson/google_gson_fix-bug_20261107-104155.json --ruleset category/java/errorprone.xml
+  ```
+
+  옵션: `--ruleset <규칙>`, `--pmd-home <PMD 폴더>`, `--java <java 경로>`
+- 실제 PMD로 도는 테스트까지 실행하려면: `WARNPRIORITY_PMD_HOME=<PMD 폴더> npm test` (없으면 그 테스트만 건너뜀)
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 - 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,
   GitHub Actions의 **Release** 워크플로를 실행(Run workflow)하거나 `v<버전>` 태그를 푸시합니다.
@@ -190,6 +247,11 @@ src/
    ├─ writers.ts       결과 JSON 스트리밍 저장 (저장 필드 변환: toOutputCommit)
    ├─ commitFiles.ts   커밋별 before/after 파일 저장 (경로 안전성 검사 포함)
    ├─ blobReader.ts    git cat-file --batch 로 파일 내용 읽기
+   ├─ pmdArtifacts.ts  PMD jar 목록(버전·SHA-256 고정)
+   ├─ pmdInstaller.ts  PMD 내려받기·검증·설치
+   ├─ pmdRunner.ts     PMD 실행, JSON 리포트 읽기
+   ├─ warningDiff.ts   커밋 전후 warning 대응(분석기와 무관)
+   ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json
    ├─ collector.ts     전체 파이프라인
    └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)
 l10n/, package.nls*.json   영어/한국어 UI 문자열 (VS Code 표시 언어에 따라 자동 선택)
