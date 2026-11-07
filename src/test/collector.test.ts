@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync
 import * as os from 'os';
 import * as path from 'path';
 import { after, before, test } from 'node:test';
-import { CollectOptions, collectCommitChanges, defaultOutputFileName, toPathspecs } from '../core/collector';
+import { CollectOptions, collectCommitChanges, defaultOutputFileName, projectDirName, toPathspecs } from '../core/collector';
 import { CancelledError } from '../core/git';
 import { parseRepositoryInput } from '../core/githubUrl';
 
@@ -31,7 +31,7 @@ function git(cwd: string, ...args: string[]): string {
   }).toString();
 }
 
-function commit(files: Record<string, string | null>, message: string): string {
+function commit(files: Record<string, string | Buffer | null>, message: string): string {
   for (const [name, content] of Object.entries(files)) {
     const p = path.join(source, name);
     if (content === null) {
@@ -56,15 +56,25 @@ function options(overrides: Partial<CollectOptions>): CollectOptions {
     includeMergeCommits: false,
     ignoreWhitespace: false,
     maxCommits: 0,
-    outputFile: path.join(root, `out-${Math.random().toString(36).slice(2)}.json`),
+    outputDir: path.join(root, `out-${Math.random().toString(36).slice(2)}`),
+    outputFileName: 'result.json',
     cacheDir,
     gitPath: 'git',
     ...overrides,
   };
 }
 
-function readJson(file: string) {
-  return JSON.parse(readFileSync(file, 'utf8'));
+function resultOf(opts: CollectOptions) {
+  return JSON.parse(readFileSync(path.join(opts.outputDir, opts.outputFileName), 'utf8'));
+}
+
+/** Contents of a saved before/after file, split into lines (index 0 = line 1). */
+function savedLines(opts: CollectOptions, sha: string, side: 'before' | 'after', file: string): string[] {
+  return readFileSync(path.join(opts.outputDir, sha, side, file), 'utf8').split('\n');
+}
+
+function sha(grep: string): string {
+  return git(source, 'log', '--format=%H', '-F', `--grep=${grep}`, 'main').trim();
 }
 
 before(() => {
@@ -95,52 +105,72 @@ test('collects only commits whose message contains the keyword (case-insensitive
   const result = await collectCommitChanges(opts);
   assert.equal(result.cancelled, false);
   assert.equal(result.ref, 'main');
-  assert.equal(result.outputFile, opts.outputFile);
-
+  assert.equal(result.outputFile, path.join(opts.outputDir, 'result.json'));
   assert.equal(result.summary.complete, true);
   assert.equal(result.summary.matchedCommits, 4);
 
-  const data = readJson(opts.outputFile);
+  const data = resultOf(opts);
   assert.ok(Array.isArray(data));
   const messages = data.map((c: { message: string }) => c.message.split('\n')[0]);
   assert.deepEqual(messages, ['Remove Old (fix build)', 'bugfix: wrong constant', 'docs: FIX readme', 'Fix division by zero']);
-
-  const fix = data[3];
-  assert.deepEqual(fix.files, [
-    { file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [{ line: 3, code: '    if (b == 0) return 0;' }] }] },
-  ]);
-  assert.deepEqual(data[0].files, [
-    { file: 'src/Old.java', diff: [{ type: 'deleted', before: [{ line: 1, code: 'class Old {}' }], after: [] }] },
-  ]);
+  assert.deepEqual(data[3].files, [{ file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [3] }] }]);
+  assert.deepEqual(data[0].files, [{ file: 'src/Old.java', diff: [{ type: 'deleted', before: [1], after: [] }] }]);
 });
 
-test('result file contains sha, parent, author, message and line-numbered per-file diffs', async () => {
+test('result file contains sha, parent, author, message and per-file line numbers only', async () => {
   const opts = options({ keywords: ['bugfix'] });
   await collectCommitChanges(opts);
-  const data = readJson(opts.outputFile);
-  const sha = git(source, 'log', '--format=%H', '--grep=bugfix', 'main').trim();
-  const parent = git(source, 'rev-parse', `${sha}^`).trim();
-  assert.deepEqual(data, [
+  const commitSha = sha('bugfix');
+  assert.deepEqual(resultOf(opts), [
     {
-      sha,
-      parent,
+      sha: commitSha,
+      parent: git(source, 'rev-parse', `${commitSha}^`).trim(),
       author: 'Tester <tester@example.com>',
       message: 'bugfix: wrong constant',
       files: [
-        { file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [{ line: 7, code: '// bugfix note' }] }] },
-        {
-          file: 'src/util.py',
-          diff: [{ type: 'modified', before: [{ line: 2, code: '    return 1' }], after: [{ line: 2, code: '    return 2' }] }],
-        },
+        { file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [7] }] },
+        { file: 'src/util.py', diff: [{ type: 'modified', before: [2], after: [2] }] },
       ],
     },
   ]);
+  // Diff blocks are written on one line each.
+  assert.match(readFileSync(path.join(opts.outputDir, 'result.json'), 'utf8'), /\{ "type": "modified", "before": \[2\], "after": \[2\] \}/);
+});
+
+test('saves the changed files before/after the commit in a folder named by the commit hash', async () => {
+  const opts = options({ keywords: ['bugfix'] });
+  const result = await collectCommitChanges(opts);
+  const commitSha = sha('bugfix');
+  const parent = git(source, 'rev-parse', `${commitSha}^`).trim();
+  assert.deepEqual(readdirSync(opts.outputDir).sort(), [commitSha, 'result.json']);
+  assert.deepEqual(readdirSync(path.join(opts.outputDir, commitSha)).sort(), ['after', 'before']);
+  assert.equal(result.summary.savedFiles, 4);
+
+  for (const file of ['src/Calc.java', 'src/util.py']) {
+    assert.equal(readFileSync(path.join(opts.outputDir, commitSha, 'before', file), 'utf8'), git(source, 'show', `${parent}:${file}`));
+    assert.equal(readFileSync(path.join(opts.outputDir, commitSha, 'after', file), 'utf8'), git(source, 'show', `${commitSha}:${file}`));
+  }
+  // The JSON line numbers point at the changed lines of these files.
+  assert.equal(savedLines(opts, commitSha, 'after', 'src/Calc.java')[7 - 1], '// bugfix note');
+  assert.equal(savedLines(opts, commitSha, 'before', 'src/util.py')[2 - 1], '    return 1');
+  assert.equal(savedLines(opts, commitSha, 'after', 'src/util.py')[2 - 1], '    return 2');
+});
+
+test('added files only get an after/ copy, deleted files only a before/ copy', async () => {
+  const opts = options({ keywords: ['Initial commit', 'Remove Old'] });
+  const result = await collectCommitChanges(opts);
+  const initial = sha('Initial commit');
+  const removal = sha('Remove Old');
+  assert.deepEqual(readdirSync(path.join(opts.outputDir, initial)), ['after']);
+  assert.deepEqual(readdirSync(path.join(opts.outputDir, removal)), ['before']);
+  assert.equal(readFileSync(path.join(opts.outputDir, removal, 'before', 'src/Old.java'), 'utf8'), 'class Old {}\n');
+  assert.equal(result.summary.savedFiles, 3); // README.md + Calc.java after, Old.java before
 });
 
 test('root commit has a null parent', async () => {
   const opts = options({ keywords: ['Initial commit'] });
   await collectCommitChanges(opts);
-  const [initial] = readJson(opts.outputFile);
+  const [initial] = resultOf(opts);
   assert.equal(initial.parent, null);
   assert.deepEqual(
     initial.files.map((f: { file: string }) => f.file),
@@ -151,14 +181,14 @@ test('root commit has a null parent', async () => {
 test('multiple keywords are OR-ed, and case sensitivity can be turned on', async () => {
   const opts = options({ keywords: ['Fix', 'constant'], caseSensitive: true });
   await collectCommitChanges(opts);
-  const messages = readJson(opts.outputFile).map((c: { message: string }) => c.message.split('\n')[0]);
+  const messages = resultOf(opts).map((c: { message: string }) => c.message.split('\n')[0]);
   assert.deepEqual(messages, ['bugfix: wrong constant', 'Fix division by zero']);
 });
 
 test('file extension filter limits files and drops commits without matching files', async () => {
   const opts = options({ keywords: ['fix'], fileExtensions: ['.JAVA'] });
   await collectCommitChanges(opts);
-  const data = readJson(opts.outputFile);
+  const data = resultOf(opts);
   const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
   assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/Calc.java']);
   assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')));
@@ -167,16 +197,16 @@ test('file extension filter limits files and drops commits without matching file
 test('regex keywords and max commit limit', async () => {
   const opts = options({ keywords: ['^(fix|bugfix)'], useRegex: true, maxCommits: 1 });
   await collectCommitChanges(opts);
-  const data = readJson(opts.outputFile);
+  const data = resultOf(opts);
   assert.equal(data.length, 1);
   assert.equal(data[0].message, 'bugfix: wrong constant');
 });
 
-test('no matching commit writes no file', async () => {
+test('no matching commit writes nothing', async () => {
   const opts = options({ keywords: ['no-such-keyword-xyz'] });
   const result = await collectCommitChanges(opts);
   assert.equal(result.outputFile, null);
-  assert.equal(existsSync(opts.outputFile), false);
+  assert.equal(existsSync(opts.outputDir), false);
 });
 
 test('a cached clone is reused and updated with new commits', async () => {
@@ -185,7 +215,7 @@ test('a cached clone is reused and updated with new commits', async () => {
   const opts = options({ keywords: ['add new'] });
   await collectCommitChanges(opts);
   assert.equal(readdirSync(cacheDir).length, clonesBefore);
-  assert.equal(readJson(opts.outputFile)[0].message, 'Fix: add New');
+  assert.equal(resultOf(opts)[0].message, 'Fix: add New');
 });
 
 test('ref from a /tree/ URL selects the branch', async () => {
@@ -196,7 +226,7 @@ test('ref from a /tree/ URL selects the branch', async () => {
   const opts = options({ repo, keywords: ['feature branch'] });
   const result = await collectCommitChanges(opts);
   assert.equal(result.ref, 'feature/x');
-  assert.equal(readJson(opts.outputFile).length, 1);
+  assert.equal(resultOf(opts).length, 1);
 });
 
 test('cancellation before start throws CancelledError', async () => {
@@ -211,28 +241,43 @@ test('unknown repository gives a readable error and leaves no cache entry', asyn
   assert.ok(!readdirSync(cacheDir).some((d) => d.includes('does-not-exist')));
 });
 
-test('renamed files keep the old path so the before version can be fetched', async () => {
+test('renamed files keep the old path; before/ uses it', async () => {
   const renamedContent = readFileSync(path.join(source, 'src/Calc.java'), 'utf8').replace('class Calc {', 'class Calculator {');
   commit({ 'src/Calc.java': null, 'src/Calculator.java': renamedContent }, 'Rename Calc to Calculator');
   const opts = options({ keywords: ['Rename Calc'] });
   await collectCommitChanges(opts);
-  const [entry] = readJson(opts.outputFile);
+  const [entry] = resultOf(opts);
   assert.deepEqual(entry.files, [
-    {
-      file: 'src/Calculator.java',
-      oldFile: 'src/Calc.java',
-      diff: [{ type: 'modified', before: [{ line: 1, code: 'class Calc {' }], after: [{ line: 1, code: 'class Calculator {' }] }],
-    },
+    { file: 'src/Calculator.java', oldFile: 'src/Calc.java', diff: [{ type: 'modified', before: [1], after: [1] }] },
   ]);
-  // The numbered lines match the real file contents on both sides.
-  const before = git(source, 'show', `${entry.parent}:src/Calc.java`).split('\n');
-  const after = git(source, 'show', `${entry.sha}:src/Calculator.java`).split('\n');
-  assert.equal(before[0], 'class Calc {');
-  assert.equal(after[0], 'class Calculator {');
+  assert.equal(savedLines(opts, entry.sha, 'before', 'src/Calc.java')[0], 'class Calc {');
+  assert.equal(savedLines(opts, entry.sha, 'after', 'src/Calculator.java')[0], 'class Calculator {');
+});
+
+test('odd file names and non-UTF-8 / CRLF content are saved byte for byte', async () => {
+  const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0d, 0x0a, 0x78, 0x0d, 0x0a]); // "café\r\nx\r\n" in Latin-1
+  commit({ 'dir with space/파일 이름.txt': 'one\ntwo\n', 'latin1.txt': latin1 }, 'odd-paths base');
+  commit({ 'dir with space/파일 이름.txt': 'one\nTWO\n', 'latin1.txt': Buffer.concat([latin1, Buffer.from('y\r\n')]) }, 'odd-paths change');
+  const opts = options({ keywords: ['odd-paths change'] });
+  await collectCommitChanges(opts);
+  const [entry] = resultOf(opts);
+  assert.deepEqual(
+    entry.files.map((f: { file: string; diff: unknown }) => [f.file, f.diff]),
+    [
+      ['dir with space/파일 이름.txt', [{ type: 'modified', before: [2], after: [2] }]],
+      ['latin1.txt', [{ type: 'added', before: [], after: [3] }]],
+    ],
+  );
+  const dir = path.join(opts.outputDir, entry.sha);
+  assert.deepEqual(readFileSync(path.join(dir, 'before', 'latin1.txt')), latin1);
+  assert.deepEqual(readFileSync(path.join(dir, 'after', 'latin1.txt')), Buffer.concat([latin1, Buffer.from('y\r\n')]));
+  assert.equal(readFileSync(path.join(dir, 'after', 'dir with space', '파일 이름.txt'), 'utf8'), 'one\nTWO\n');
 });
 
 test('helpers', () => {
   assert.deepEqual(toPathspecs(['java', '.py', '*.kt', ' ', 'java']), [':(icase)*.java', ':(icase)*.py', ':(icase)*.kt']);
   const name = defaultOutputFileName(parseRepositoryInput('https://github.com/o/r'), ['fix', 'bug/x'], new Date(2024, 0, 2, 3, 4, 5));
   assert.equal(name, 'o_r_fix-bug_x_20240102-030405.json');
+  assert.equal(projectDirName(parseRepositoryInput('https://github.com/google/gson')), 'google_gson');
+  assert.equal(projectDirName(parseRepositoryInput('https://gitlab.com/group/sub/project')), 'group_sub_project');
 });

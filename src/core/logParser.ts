@@ -31,6 +31,8 @@ interface PartialFile {
   deletedFile: boolean;
   renamed: boolean;
   copied: boolean;
+  /** Submodule pointer change ("Subproject commit ..."), not source code. */
+  submodule: boolean;
   changes: CodeChange[];
 }
 
@@ -180,6 +182,7 @@ export class GitLogParser {
         deletedFile: false,
         renamed: false,
         copied: false,
+        submodule: false,
         changes: [],
       };
       return;
@@ -224,8 +227,12 @@ export class GitLogParser {
       }
     } else if (line.startsWith('new file mode')) {
       file.newFile = true;
+      file.submodule ||= line.endsWith(' 160000');
     } else if (line.startsWith('deleted file mode')) {
       file.deletedFile = true;
+      file.submodule ||= line.endsWith(' 160000');
+    } else if (line.startsWith('index ') || line.startsWith('new mode ') || line.startsWith('old mode ')) {
+      file.submodule ||= line.endsWith(' 160000');
     } else if (line.startsWith('rename from ') || line.startsWith('rename to ')) {
       file.renamed = true;
     } else if (line.startsWith('copy from ') || line.startsWith('copy to ')) {
@@ -264,8 +271,8 @@ export class GitLogParser {
     this.closeHunk();
     const f = this.file;
     this.file = null;
-    if (!f || !this.commit || f.changes.length === 0) {
-      // Binary files, pure renames and mode changes carry no code changes.
+    if (!f || !this.commit || f.changes.length === 0 || f.submodule) {
+      // Binary files, pure renames, mode changes and submodule bumps carry no code changes.
       return;
     }
     const added = f.newFile || f.minusIsDevNull;

@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { test } from 'node:test';
 import { CommitRecord } from '../core/types';
-import { JsonArrayWriter, toOutputCommit } from '../core/writers';
+import { formatJson, JsonArrayWriter, toOutputCommit } from '../core/writers';
 
 const commit: CommitRecord = {
   sha: 'abc',
@@ -39,7 +39,7 @@ const commit: CommitRecord = {
   ],
 };
 
-test('toOutputCommit keeps sha, parent, author, message and line-numbered per-file diffs', () => {
+test('toOutputCommit keeps sha, parent, author, message and per-file line numbers only', () => {
   assert.deepEqual(toOutputCommit(commit), {
     sha: 'abc',
     parent: 'p1',
@@ -49,26 +49,40 @@ test('toOutputCommit keeps sha, parent, author, message and line-numbered per-fi
       {
         file: 'a.c',
         diff: [
-          {
-            type: 'modified',
-            before: [{ line: 1, code: 'x = 1;' }],
-            after: [
-              { line: 1, code: 'x = 2;' },
-              { line: 2, code: 'y = 3;' },
-            ],
-          },
-          { type: 'added', before: [], after: [{ line: 7, code: 'z();' }] },
+          { type: 'modified', before: [1], after: [1, 2] },
+          { type: 'added', before: [], after: [7] },
         ],
       },
-      { file: 'gone.c', diff: [{ type: 'deleted', before: [{ line: 1, code: 'bye' }], after: [] }] },
-      {
-        file: 'new/name.c',
-        oldFile: 'old/name.c',
-        diff: [{ type: 'modified', before: [{ line: 1, code: 'a' }], after: [{ line: 1, code: 'b' }] }],
-      },
+      { file: 'gone.c', diff: [{ type: 'deleted', before: [1], after: [] }] },
+      { file: 'new/name.c', oldFile: 'old/name.c', diff: [{ type: 'modified', before: [1], after: [1] }] },
     ],
   });
   assert.equal(toOutputCommit({ ...commit, parents: [] }).parent, null);
+  assert.ok(!JSON.stringify(toOutputCommit(commit)).includes('x = 1;'), 'no code in the output');
+});
+
+test('formatJson keeps diff blocks and number arrays on one line', () => {
+  const value = { sha: 'a', files: [{ file: 'f', diff: [{ type: 'added', before: [], after: [3, 4] }] }], empty: [], none: null };
+  assert.equal(
+    formatJson(value),
+    [
+      '{',
+      '  "sha": "a",',
+      '  "files": [',
+      '    {',
+      '      "file": "f",',
+      '      "diff": [',
+      '        { "type": "added", "before": [], "after": [3, 4] }',
+      '      ]',
+      '    }',
+      '  ],',
+      '  "empty": [],',
+      '  "none": null',
+      '}',
+    ].join('\n'),
+  );
+  const tricky = { message: 'line1\n"quoted" \\ end', unicode: '한글' };
+  assert.deepEqual(JSON.parse(formatJson(tricky)), tricky);
 });
 
 test('JSON writer produces a valid array for zero, one and many commits', async () => {

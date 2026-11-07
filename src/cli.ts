@@ -3,13 +3,13 @@
  * Handy for batch runs and for testing without VS Code:
  *
  *   npm run compile
- *   node out/cli.js https://github.com/owner/repo "fix,bug" [--out file.json]
+ *   node out/cli.js https://github.com/owner/repo "fix,bug" [--out-dir dir]
  *        [--ext java,py] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
  *        [--cache <dir>] [--git <path>]
  */
 import * as os from 'os';
 import * as path from 'path';
-import { collectCommitChanges, defaultOutputFileName } from './core/collector';
+import { collectCommitChanges, defaultOutputFileName, projectDirName } from './core/collector';
 import { CancelledError } from './core/git';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
@@ -29,7 +29,7 @@ function describeProgress(e: ProgressEvent): string {
 
 function usage(): never {
   console.error(
-    'Usage: node out/cli.js <github-url> <keywords> [--out file.json] [--ext java,py] [--max N]\n' +
+    'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java,py] [--max N]\n' +
       '                         [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--cache dir] [--git path]\n' +
       '  <keywords> is a comma-separated list; use "" to collect every commit.',
   );
@@ -61,7 +61,8 @@ async function main(): Promise<void> {
 
   const repo = parseRepositoryInput(positional[0]);
   const keywords = positional[1].split(',').map((k) => k.trim()).filter((k) => k);
-  const outputFile = path.resolve((flags.out as string) ?? defaultOutputFileName(repo, keywords));
+  // Same layout as the VS Code command: <out-dir>/<owner>_<repo>/{<result>.json, <sha>/before|after/...}
+  const outputDir = path.join(path.resolve((flags['out-dir'] as string) ?? 'warnpriority-output'), projectDirName(repo));
   const quiet = flags.quiet === true;
 
   const controller = new AbortController();
@@ -76,7 +77,8 @@ async function main(): Promise<void> {
     includeMergeCommits: flags.merges === true,
     ignoreWhitespace: flags['ignore-ws'] === true,
     maxCommits: flags.max ? parseInt(flags.max as string, 10) : 0,
-    outputFile,
+    outputDir,
+    outputFileName: defaultOutputFileName(repo, keywords),
     cacheDir: path.resolve((flags.cache as string) ?? path.join(os.homedir(), '.warnpriority', 'repos')),
     gitPath: (flags.git as string) ?? 'git',
     signal: controller.signal,
@@ -94,7 +96,8 @@ async function main(): Promise<void> {
   const s = result.summary;
   console.log(
     `${result.cancelled ? 'Cancelled; partial results' : 'Done'}: ${s.commitsWithCodeChanges}/${s.matchedCommits} commits, ` +
-      `${s.codeChanges.total} code changes (added ${s.codeChanges.added}, deleted ${s.codeChanges.deleted}, modified ${s.codeChanges.modified})`,
+      `${s.codeChanges.total} code changes (added ${s.codeChanges.added}, deleted ${s.codeChanges.deleted}, modified ${s.codeChanges.modified}), ` +
+      `${s.savedFiles} before/after files saved`,
   );
   console.log(result.outputFile);
 }

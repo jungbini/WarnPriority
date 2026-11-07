@@ -238,6 +238,36 @@ test('several commits, empty message, message without trailing newline, commit w
   assert.equal(commits[2].parents.length, 2);
 });
 
+test('submodule pointer changes are not code', () => {
+  const [c] = parse([
+    ...header('8'.repeat(40), '9'.repeat(40), 'bump submodule'),
+    'diff --git a/lib/sub b/lib/sub',
+    'index 1111111..2222222 160000',
+    '--- a/lib/sub',
+    '+++ b/lib/sub',
+    '@@ -1 +1 @@',
+    '-Subproject commit 1111111111111111111111111111111111111111',
+    '+Subproject commit 2222222222222222222222222222222222222222',
+    'diff --git a/new-sub b/new-sub',
+    'new file mode 160000',
+    'index 0000000..3333333',
+    '--- /dev/null',
+    '+++ b/new-sub',
+    '@@ -0,0 +1 @@',
+    '+Subproject commit 3333333333333333333333333333333333333333',
+    'diff --git a/real.c b/real.c',
+    '--- a/real.c',
+    '+++ b/real.c',
+    '@@ -1 +1 @@',
+    '-a',
+    '+b',
+  ]);
+  assert.deepEqual(
+    c.files.map((f) => f.newPath),
+    ['real.c'],
+  );
+});
+
 test('header path helpers', () => {
   assert.equal(parseHeaderPath('/dev/null'), null);
   assert.equal(parseHeaderPath('a/x y.txt\t'), 'a/x y.txt');

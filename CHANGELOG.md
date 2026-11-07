@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- JSON에서 코드를 빼고 줄 번호만 저장: `{ "type": "modified", "before": [11], "after": [11, 12] }` (블록당 한 줄로 출력)
+- 결과를 저장소별 폴더(`<owner>_<repo>/`)에 저장하고, 커밋마다 커밋 해시 폴더를 만들어
+  바뀐 파일의 수정 전(`before/`, parent 시점)·수정 후(`after/`, 커밋 시점) 버전을 저장
+- 기본 출력 폴더(`<워크스페이스>/warnpriority-output`)에 `.gitignore` 생성
+- 서브모듈 포인터 변경(`Subproject commit …`)을 코드 변경에서 제외
+- CLI: `--out <파일>` 대신 `--out-dir <폴더>`
+
 ## 0.3.0
 
 - `diff`의 각 코드 줄에 줄 번호 추가: `before`/`after`가 `{ "line", "code" }` 배열이 됨

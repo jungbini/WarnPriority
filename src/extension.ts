@@ -2,10 +2,10 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { collectCommitChanges, CollectResult, defaultOutputFileName } from './core/collector';
+import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName } from './core/collector';
 import { CancelledError } from './core/git';
 import { parseRepositoryInput } from './core/githubUrl';
-import { ProgressEvent, RepoRef } from './core/types';
+import { ProgressEvent } from './core/types';
 
 const LAST_URL_KEY = 'warnPriority.lastRepositoryUrl';
 const LAST_KEYWORDS_KEY = 'warnPriority.lastKeywords';
@@ -75,8 +75,8 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
   await context.globalState.update(LAST_KEYWORDS_KEY, keywordInput.trim());
 
   const config = vscode.workspace.getConfiguration('warnPriority');
-  const outputFile = await chooseOutputFile(config, repo, keywords);
-  if (!outputFile) {
+  const outputRoot = await chooseOutputRoot(config);
+  if (!outputRoot) {
     return;
   }
 
@@ -109,7 +109,8 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
             includeMergeCommits: config.get<boolean>('includeMergeCommits', false),
             ignoreWhitespace: config.get<boolean>('ignoreWhitespace', false),
             maxCommits: config.get<number>('maxCommits', 0),
-            outputFile,
+            outputDir: path.join(outputRoot, projectDirName(repo)),
+            outputFileName: defaultOutputFileName(repo, keywords),
             cacheDir: path.join(context.globalStorageUri.fsPath, 'repos'),
             gitPath: await resolveGitPath(config),
             signal: controller.signal,
@@ -185,16 +186,18 @@ async function showResult(result: CollectResult, keywords: string[], output: vsc
   }
 
   const c = summary.codeChanges;
+  const folder = path.basename(result.outputDir);
   const text = result.cancelled
-    ? vscode.l10n.t('Cancelled. Partial results ({0} commits) were saved to {1}.', summary.matchedCommits, path.basename(outputFile))
+    ? vscode.l10n.t('Cancelled. Partial results ({0} commits) were saved to {1}.', summary.matchedCommits, folder)
     : vscode.l10n.t(
-        'Collected {0} code changes (added {1}, deleted {2}, modified {3}) from {4} commits. Saved to {5}.',
+        'Collected {0} code changes (added {1}, deleted {2}, modified {3}) from {4} commits and saved {5} before/after files in the {6} folder.',
         c.total,
         c.added,
         c.deleted,
         c.modified,
         summary.commitsWithCodeChanges,
-        path.basename(outputFile),
+        summary.savedFiles,
+        folder,
       );
   const reveal = vscode.l10n.t('Reveal in File Explorer');
   const choice = result.cancelled
@@ -206,16 +209,12 @@ async function showResult(result: CollectResult, keywords: string[], output: vsc
 }
 
 /**
- * Output location: `warnPriority.outputDirectory` if set (relative paths are
- * resolved against the first workspace folder), otherwise
- * `<workspace>/warnpriority-output`. Without a workspace the user picks a file.
+ * Root folder for results (a subfolder per repository is created inside):
+ * `warnPriority.outputDirectory` if set (relative paths are resolved against
+ * the first workspace folder), otherwise `<workspace>/warnpriority-output`.
+ * Without a workspace the user picks a folder.
  */
-async function chooseOutputFile(
-  config: vscode.WorkspaceConfiguration,
-  repo: RepoRef,
-  keywords: string[],
-): Promise<string | undefined> {
-  const fileName = defaultOutputFileName(repo, keywords);
+async function chooseOutputRoot(config: vscode.WorkspaceConfiguration): Promise<string | undefined> {
   const workspaceDir = vscode.workspace.workspaceFolders?.find((f) => f.uri.scheme === 'file')?.uri.fsPath;
   let dir = config.get<string>('outputDirectory', '').trim();
   if (dir.startsWith('~')) {
@@ -223,20 +222,35 @@ async function chooseOutputFile(
   }
 
   if (!dir && !workspaceDir) {
-    const uri = await vscode.window.showSaveDialog({
-      title: vscode.l10n.t('Save collected code changes'),
-      defaultUri: vscode.Uri.file(path.join(os.homedir(), fileName)),
-      filters: { JSON: ['json'] },
+    const picked = await vscode.window.showOpenDialog({
+      title: vscode.l10n.t('Select a folder to save the results in'),
+      openLabel: vscode.l10n.t('Save Here'),
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri: vscode.Uri.file(os.homedir()),
     });
-    return uri?.fsPath;
+    return picked?.[0]?.fsPath;
   }
   if (!dir) {
     dir = path.join(workspaceDir!, 'warnpriority-output');
+    await keepOutOfGit(dir);
   } else if (!path.isAbsolute(dir)) {
     dir = path.join(workspaceDir ?? os.homedir(), dir);
   }
+  return dir;
+}
+
+/**
+ * The default output folder lives inside the user's workspace. Ignore it in
+ * git so thousands of checked-out before/after files do not flood the
+ * Source Control view. An existing .gitignore is left alone.
+ */
+async function keepOutOfGit(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
-  return path.join(dir, fileName);
+  await fs
+    .writeFile(path.join(dir, '.gitignore'), '# Created by WarnPriority: keep collected results out of git.\n*\n', { flag: 'wx' })
+    .catch(() => undefined);
 }
 
 /** `warnPriority.gitPath`, else the Git that VS Code's Git extension uses, else "git" on PATH. */

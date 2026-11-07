@@ -15,12 +15,13 @@
   "Extracting changed code: {0}/{1} commits": "변경 코드 추출 중: {0}/{1} 커밋",
   "No commit message contains \"{0}\".": "\"{0}\"을(를) 포함한 커밋 메시지가 없습니다.",
   "The repository has no matching commits.": "조건에 맞는 커밋이 없습니다.",
-  "Cancelled. Partial results ({0} commits) were saved to {1}.": "취소되었습니다. 지금까지의 결과({0}개 커밋)를 {1}에 저장했습니다.",
-  "Collected {0} code changes (added {1}, deleted {2}, modified {3}) from {4} commits. Saved to {5}.": "{4}개 커밋에서 변경 코드 {0}건(추가 {1}, 삭제 {2}, 수정 {3})을 수집해 {5}에 저장했습니다.",
+  "Cancelled. Partial results ({0} commits) were saved to {1}.": "취소되었습니다. 지금까지의 결과({0}개 커밋)를 {1} 폴더에 저장했습니다.",
+  "Collected {0} code changes (added {1}, deleted {2}, modified {3}) from {4} commits and saved {5} before/after files in the {6} folder.": "{4}개 커밋에서 변경 코드 {0}건(추가 {1}, 삭제 {2}, 수정 {3})을 수집하고, 수정 전후 파일 {5}개를 {6} 폴더에 저장했습니다.",
   "Reveal in File Explorer": "파일 탐색기에서 보기",
-  "Save collected code changes": "수집한 변경 코드 저장",
   "The repository cache is already empty.": "저장소 캐시가 이미 비어 있습니다.",
   "Delete": "삭제",
   "Delete {0} cached repository clone(s)? They will be downloaded again on the next run.": "캐시된 저장소 복제본 {0}개를 삭제할까요? 다음 실행 시 다시 다운로드됩니다.",
-  "Repository cache cleared.": "저장소 캐시를 삭제했습니다."
+  "Repository cache cleared.": "저장소 캐시를 삭제했습니다.",
+  "Select a folder to save the results in": "결과를 저장할 폴더 선택",
+  "Save Here": "여기에 저장"
 }

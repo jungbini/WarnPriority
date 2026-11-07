@@ -1,3 +1,7 @@
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { BlobReader } from './blobReader';
+import { saveCommitFiles } from './commitFiles';
 import { CancelledError, GitContext, GitError, runGit, streamGitLines } from './git';
 import { GitLogParser, LOG_FORMAT } from './logParser';
 import { ensureBareClone, resolveStartCommit } from './repoCache';
@@ -17,8 +21,13 @@ export interface CollectOptions {
   ignoreWhitespace: boolean;
   /** 0 = no limit. */
   maxCommits: number;
-  /** Result file (JSON array, see `OutputCommit`). */
-  outputFile: string;
+  /**
+   * Project folder: receives the result JSON (`outputFileName`, see
+   * `OutputCommit`) and one folder per commit, named by its hash, with the
+   * changed files before/after the commit. Created when something matches.
+   */
+  outputDir: string;
+  outputFileName: string;
   /** Where bare clones are cached between runs. */
   cacheDir: string;
   gitPath: string;
@@ -28,8 +37,9 @@ export interface CollectOptions {
 }
 
 export interface CollectResult {
-  /** null when nothing matched (no file is written in that case). */
+  /** Path of the result JSON; null when nothing matched (nothing is written then). */
   outputFile: string | null;
+  outputDir: string;
   cancelled: boolean;
   summary: RunSummary;
   ref: string;
@@ -41,6 +51,10 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
   const ctx: GitContext = { gitPath: opts.gitPath, signal: opts.signal, log: opts.log };
   const progress = (event: ProgressEvent) => opts.onProgress?.(event);
   const warnings: string[] = [];
+  const warn = (w: string) => {
+    warnings.push(w);
+    opts.log?.(`WARNING: ${w}`);
+  };
 
   const gitVersion = await getGitVersion(ctx);
   opts.log?.(`Using ${gitVersion.text}`);
@@ -48,10 +62,7 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     throw new Error(`Including merge commits requires Git 2.31 or newer (found ${gitVersion.text}).`);
   }
 
-  const repoDir = await ensureBareClone(ctx, opts.repo, opts.cacheDir, progress, (w) => {
-    warnings.push(w);
-    opts.log?.(`WARNING: ${w}`);
-  });
+  const repoDir = await ensureBareClone(ctx, opts.repo, opts.cacheDir, progress, warn);
   const start = await resolveStartCommit(ctx, repoDir, opts.repo.refHint);
   opts.log?.(`Reading history of ${start.ref} (${start.sha})`);
 
@@ -94,10 +105,13 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     codeChanges: { added: 0, deleted: 0, modified: 0, total: 0 },
     linesAdded: 0,
     linesDeleted: 0,
+    savedFiles: 0,
     finishedAt: '',
   };
+  const outputFile = path.join(opts.outputDir, opts.outputFileName);
   const result: CollectResult = {
-    outputFile: opts.outputFile,
+    outputFile,
+    outputDir: opts.outputDir,
     cancelled: false,
     summary,
     ref: start.ref,
@@ -138,7 +152,9 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     ...tail,
   ];
 
-  const writer = new JsonArrayWriter(opts.outputFile);
+  await fs.mkdir(opts.outputDir, { recursive: true });
+  const writer = new JsonArrayWriter(outputFile);
+  const reader = new BlobReader(ctx, repoDir);
   const commitUrl = opts.repo.webUrl ? (sha: string) => `${opts.repo.webUrl}/commit/${sha}` : () => null;
   const parser = new GitLogParser(commitUrl);
   let lastProgressAt = 0;
@@ -157,6 +173,8 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
       summary.codeChanges.deleted += commit.stats.deletedBlocks;
       summary.codeChanges.modified += commit.stats.modifiedBlocks;
       summary.codeChanges.total += commit.stats.addedBlocks + commit.stats.deletedBlocks + commit.stats.modifiedBlocks;
+      // Files first: every commit listed in the JSON then has its folder, even after a cancel.
+      summary.savedFiles += await saveCommitFiles(reader, commit, opts.outputDir, warn);
       await writer.writeCommit(commit);
     }
     const now = Date.now();
@@ -179,6 +197,8 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
       await writer.discard().catch(() => undefined);
       throw e;
     }
+  } finally {
+    await reader.close().catch(() => undefined);
   }
 
   summary.finishedAt = new Date().toISOString();
@@ -204,6 +224,14 @@ export function toPathspecs(extensions: string[]): string[] {
 }
 
 /** Builds a file name such as "owner_repo_fix-bug_20250101-120000.json". */
+/** Folder name for a repository's results, e.g. "google_gson". */
+export function projectDirName(repo: RepoRef): string {
+  return [repo.owner, repo.name]
+    .filter((p): p is string => !!p)
+    .join('_')
+    .replace(/[<>:"/\\|?*\x00-\x1f\s]+/g, '_');
+}
+
 export function defaultOutputFileName(repo: RepoRef, keywords: string[], date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp =

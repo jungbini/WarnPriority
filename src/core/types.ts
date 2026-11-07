@@ -88,7 +88,11 @@ export interface RepoRef {
 }
 
 /**
- * Result file format: a JSON array of these, one per commit.
+ * Result file format: a JSON array of these, one per commit. Only line
+ * numbers are stored; the code itself is saved as files next to the JSON:
+ *
+ *   <project folder>/<sha>/before/<oldFile ?? file>   file at `parent`
+ *   <project folder>/<sha>/after/<file>               file at `sha`
  *
  *   [
  *     {
@@ -96,17 +100,11 @@ export interface RepoRef {
  *       "files": [
  *         { "file": "src/A.java",
  *           "diff": [
- *             { "type": "modified",
- *               "before": [ { "line": 11, "code": "return x.length();" } ],
- *               "after":  [ { "line": 11, "code": "if (x == null) return 0;" },
- *                           { "line": 12, "code": "return x.length();" } ] },
- *             { "type": "added",   "before": [], "after": [ { "line": 30, "code": "..." } ] },
- *             { "type": "deleted", "before": [ { "line": 40, "code": "..." } ], "after": [] } ] } ]
+ *             { "type": "modified", "before": [11], "after": [11, 12] },
+ *             { "type": "added", "before": [], "after": [30, 31] },
+ *             { "type": "deleted", "before": [40], "after": [] } ] } ]
  *     }
  *   ]
- *
- * `before` line numbers refer to the file at `parent` (path `oldFile ?? file`),
- * `after` line numbers to the file at `sha` (path `file`).
  */
 export interface OutputCommit {
   sha: string;
@@ -128,15 +126,10 @@ export interface OutputFile {
 
 export interface OutputDiff {
   type: ChangeType;
-  /** Removed lines, numbered as in the file before the commit. Empty for "added". */
-  before: OutputLine[];
-  /** Added lines, numbered as in the file after the commit. Empty for "deleted". */
-  after: OutputLine[];
-}
-
-export interface OutputLine {
-  line: number;
-  code: string;
+  /** Removed lines, numbered as in the file before the commit (`before/`). Empty for "added". */
+  before: number[];
+  /** Added lines, numbered as in the file after the commit (`after/`). Empty for "deleted". */
+  after: number[];
 }
 
 /** Progress events emitted while collecting; the UI decides how to render them. */

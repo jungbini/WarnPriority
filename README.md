@@ -1,6 +1,7 @@
 # WarnPriority
 
-GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드가 들어간 커밋**을 찾아, 그 커밋에서 **추가·삭제·수정된 코드만** 추출해 JSON 파일로 저장하는 VS Code 확장입니다.
+GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드가 들어간 커밋**을 찾아, 그 커밋에서 **추가·삭제·수정된 줄 번호**를 JSON으로 저장하고, 바뀐 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 두는 VS Code 확장입니다.
+수정 전/후 파일에 정적 분석기를 돌린 뒤, JSON의 줄 번호를 기준으로 warning이 어떻게 바뀌었는지 비교하는 데 쓰도록 만들었습니다.
 
 ## 사용법
 
@@ -10,9 +11,22 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
 3. **커밋 메시지 키워드**를 입력합니다. 예: `fix, bug`
 4. 진행 상황이 알림으로 표시되고(취소 가능), 완료되면 결과 파일이 **VS Code 에디터에서 자동으로 열립니다.**
 
-결과 파일은 기본적으로 `<워크스페이스>/warnpriority-output/` 아래에
-`<owner>_<repo>_<키워드>_<날짜-시간>.json` 이름으로 저장됩니다.
-열린 폴더가 없으면 저장 위치를 묻습니다.
+결과는 기본적으로 `<워크스페이스>/warnpriority-output/` 아래, 저장소별 폴더에 저장됩니다(열린 폴더가 없으면 저장할 폴더를 묻습니다).
+
+```
+warnpriority-output/
+├─ .gitignore                                   ← 결과가 git 변경 목록에 뜨지 않도록 자동 생성
+└─ google_gson/                                 ← 저장소(프로젝트)별 폴더
+   ├─ google_gson_fix-bug_20261107-104155.json  ← 커밋 목록 + 줄 번호
+   ├─ 094f5003ce5f6d2fb65457bee9c78b9d53d25308/ ← 커밋 해시 폴더
+   │  ├─ before/gson/src/main/java/com/google/gson/Gson.java   ← 수정 전 (parent 시점)
+   │  └─ after/gson/src/main/java/com/google/gson/Gson.java    ← 수정 후 (커밋 시점)
+   └─ …
+```
+
+- `before/`, `after/` 아래는 저장소 안의 경로를 그대로 따릅니다. 바뀐 파일만 저장합니다(프로젝트 전체가 아님).
+- 새로 추가된 파일은 `after/`에만, 삭제된 파일은 `before/`에만 있습니다. 이름이 바뀐 파일은 `before/`에 옛 경로(`oldFile`)로 저장됩니다.
+- 같은 저장소를 다른 키워드로 다시 수집하면 같은 커밋 폴더를 그대로 덮어씁니다(내용은 동일).
 
 ### 입력 가능한 주소 형식
 
@@ -36,17 +50,17 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
 
 ## 결과 파일 형식
 
-커밋 하나당 항목 하나인 **JSON 배열**이며, 아래 정보만 저장합니다.
+커밋 하나당 항목 하나인 **JSON 배열**입니다. 코드는 저장하지 않고 **줄 번호만** 저장하며, 코드는 위의 `before/`, `after/` 파일에서 확인합니다.
 
 | 필드 | 내용 |
 | --- | --- |
-| `sha` | 커밋 SHA |
+| `sha` | 커밋 SHA (= 커밋 폴더 이름) |
 | `parent` | 부모 커밋 SHA (diff 비교 기준인 첫 번째 부모, 최초 커밋이면 `null`) |
 | `author` | 작성자 `이름 <이메일>` |
 | `message` | 커밋 메시지 전체 |
 | `files[].file` | 커밋 후 파일 경로 (삭제된 파일은 삭제 전 경로) |
 | `files[].oldFile` | 커밋 전 파일 경로 — **이름이 바뀐 파일에만** 있음 |
-| `files[].diff` | 그 파일에서 추가·삭제·수정된 소스코드와 줄 번호 (아래) |
+| `files[].diff` | 추가·삭제·수정된 줄 번호 (아래) |
 
 ```json
 [
@@ -59,13 +73,9 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
       {
         "file": "gson/src/main/java/com/google/gson/Gson.java",
         "diff": [
-          {
-            "type": "modified",
-            "before": [ { "line": 1118, "code": "       * For compatibility with JSON 1.5 and earlier, we return null for empty" } ],
-            "after":  [ { "line": 1118, "code": "       * For compatibility with Gson 1.5 and earlier, we return null for empty" } ]
-          },
-          { "type": "added",   "before": [], "after": [ { "line": 1200, "code": "..." } ] },
-          { "type": "deleted", "before": [ { "line": 1300, "code": "..." } ], "after": [] }
+          { "type": "modified", "before": [1118], "after": [1118] },
+          { "type": "added", "before": [], "after": [1200, 1201] },
+          { "type": "deleted", "before": [1300], "after": [] }
         ]
       }
     ]
@@ -79,24 +89,25 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 
 | `type` | 의미 | `before` | `after` |
 | --- | --- | --- | --- |
-| `added` (추가) | 줄이 추가되기만 함 | `[]` | 추가된 줄 |
-| `deleted` (삭제) | 줄이 삭제되기만 함 | 삭제된 줄 | `[]` |
-| `modified` (수정) | 기존 줄이 삭제되고 그 자리에 다른 줄이 들어감 | 변경 전 줄 | 변경 후 줄 |
+| `added` (추가) | 줄이 추가되기만 함 | `[]` | 추가된 줄 번호 |
+| `deleted` (삭제) | 줄이 삭제되기만 함 | 삭제된 줄 번호 | `[]` |
+| `modified` (수정) | 기존 줄이 삭제되고 그 자리에 다른 줄이 들어감 | 변경 전 줄 번호 | 변경 후 줄 번호 |
 
-- 각 줄은 `{ "line": 줄 번호, "code": 코드 }` 형태입니다.
-- `before`의 줄 번호는 **커밋 전 파일**(`git show <parent>:<oldFile 또는 file>`) 기준이고,
-  `after`의 줄 번호는 **커밋 후 파일**(`git show <sha>:<file>`) 기준입니다.
-- 커밋 전 파일에서 `before` 줄들을, 커밋 후 파일에서 `after` 줄들을 빼면 남는 줄(바뀌지 않은 줄)은 **순서대로 1:1로 대응**합니다.
-  정적 분석 경고를 커밋 전/후 버전끼리 맞춰 볼 때, 바뀌지 않은 줄의 줄 번호가 어떻게 밀렸는지 이걸로 계산할 수 있습니다.
-- 바이너리 파일, 내용 변경 없는 이름 변경/권한 변경은 코드 변경이 없으므로 제외됩니다.
-- 중간에 취소해도 그때까지 수집한 커밋은 올바른 JSON 배열로 저장되고 열립니다.
-- 검색 조건(저장소·키워드)은 파일 이름(`<owner>_<repo>_<키워드>_<날짜-시간>.json`)과 출력 창(`WarnPriority`) 로그에 남습니다.
+- `before` 줄 번호는 `<sha>/before/<oldFile 또는 file>` 파일, `after` 줄 번호는 `<sha>/after/<file>` 파일 기준입니다.
+  저장된 파일은 git에 들어 있는 내용 그대로(바이트 단위 동일)라서, 정적 분석기가 보고하는 줄 번호와 바로 비교할 수 있습니다.
+- **warning 비교 방법**
+  - 수정 전 파일의 warning 중 `before` 줄에 있던 것 → 커밋이 고친(또는 지운) 코드에 있던 warning 후보
+  - 수정 후 파일의 warning 중 `after` 줄에 있는 것 → 커밋이 새로 넣은 코드에 생긴 warning 후보
+  - 바뀌지 않은 줄의 warning은 위치만 밀립니다: 수정 전 파일에서 `before` 줄을, 수정 후 파일에서 `after` 줄을 빼면
+    남는 줄들이 **순서대로 1:1로 대응**하므로, 이걸로 수정 전 줄 번호 ↔ 수정 후 줄 번호를 맞출 수 있습니다.
+- 바이너리 파일, 내용 변경 없는 이름 변경/권한 변경, 서브모듈 변경은 코드 변경이 없으므로 제외됩니다.
+- 중간에 취소해도 그때까지 수집한 커밋은 올바른 JSON 배열로 저장되고, JSON에 있는 커밋은 모두 커밋 폴더가 있습니다.
 
 ## 설정
 
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
-| `warnPriority.outputDirectory` | `""` | 결과 저장 폴더. 비우면 `<워크스페이스>/warnpriority-output` |
+| `warnPriority.outputDirectory` | `""` | 결과 저장 폴더(안에 저장소별 폴더 생성). 비우면 `<워크스페이스>/warnpriority-output` |
 | `warnPriority.fileExtensions` | `[]` | 특정 확장자 파일만 수집. 예: `["java"]` |
 | `warnPriority.maxCommits` | `0` | 최대 커밋 수(최신순). `0` = 제한 없음 |
 | `warnPriority.caseSensitive` | `false` | 키워드 대소문자 구분 |
@@ -112,6 +123,8 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 - 받은 저장소는 VS Code 확장 저장 공간에 캐시되어, 다음 실행부터는 `git fetch`로 새 커밋만 받습니다.
   디스크를 비우려면 **`WarnPriority: 캐시된 저장소 복제본 삭제`** 명령을 실행하세요.
 - 결과는 커밋 단위로 스트리밍 저장되므로 대형 저장소에서도 메모리 사용량이 일정합니다.
+  수정 전/후 파일은 `git cat-file --batch` 프로세스 하나로 꺼냅니다(google/gson `fix, bug` + `.java`: 커밋 380개, 파일 3,201개, 약 89MB, 3초 이내).
+- 키워드 없이(모든 커밋) 큰 저장소를 수집하면 커밋 폴더가 디스크를 많이 차지할 수 있습니다. `warnPriority.maxCommits`, `warnPriority.fileExtensions`로 범위를 줄이세요.
 - 비공개 저장소는 PC에 설정된 Git 자격 증명(Git Credential Manager, SSH 키 등)으로 접근합니다.
 
 **요구 사항:** [Git](https://git-scm.com/) 설치 (VS Code Git 확장과 같은 Git을 사용)
@@ -128,10 +141,10 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
 - VS Code 없이 같은 기능을 CLI로 실행할 수도 있습니다(일괄 수집에 유용):
 
   ```bash
-  npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out gson.json
+  npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out-dir results
   ```
 
-  옵션: `--out <파일>`, `--ext java,py`, `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
+  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`, `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 
@@ -147,6 +160,8 @@ src/
    ├─ git.ts           git 프로세스 실행/스트리밍, 취소 처리
    ├─ logParser.ts     git log -p 출력 스트리밍 파서 → 추가/삭제/수정 블록
    ├─ writers.ts       결과 JSON 스트리밍 저장 (저장 필드 변환: toOutputCommit)
+   ├─ commitFiles.ts   커밋별 before/after 파일 저장 (경로 안전성 검사 포함)
+   ├─ blobReader.ts    git cat-file --batch 로 파일 내용 읽기
    ├─ collector.ts     전체 파이프라인
    └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)
 l10n/, package.nls*.json   영어/한국어 UI 문자열 (VS Code 표시 언어에 따라 자동 선택)
