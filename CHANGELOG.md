@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- 정적 분석이 가능한 소스 코드 파일만 기본으로 수집: `warnPriority.fileExtensions` 기본값을
+  주요 언어 확장자 목록(`java`, `kt`, `c`, `cpp`, `cs`, `go`, `rs`, `py`, `js`, `ts`, `php`, `rb`, `swift` 등)으로 변경.
+  README·XML·YAML·빌드 설정·이미지 등은 제외되고, 그런 파일만 바꾼 커밋은 결과에서 빠짐.
+  Java만 수집하려면 `["java"]`, 모든 파일은 `[]`
+- 출력 창 로그에 수집 대상 확장자 표시
+- CLI: `--ext` 생략 시 같은 기본 목록 사용, `--ext all`로 모든 파일 수집
+
 ## 0.4.0
 
 - JSON에서 코드를 빼고 줄 번호만 저장: `{ "type": "modified", "before": [11], "after": [11, 12] }` (블록당 한 줄로 출력)

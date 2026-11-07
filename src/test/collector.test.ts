@@ -4,7 +4,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync
 import * as os from 'os';
 import * as path from 'path';
 import { after, before, test } from 'node:test';
-import { CollectOptions, collectCommitChanges, defaultOutputFileName, projectDirName, toPathspecs } from '../core/collector';
+import {
+  CollectOptions,
+  collectCommitChanges,
+  defaultOutputFileName,
+  projectDirName,
+  SOURCE_FILE_EXTENSIONS,
+  toPathspecs,
+} from '../core/collector';
 import { CancelledError } from '../core/git';
 import { parseRepositoryInput } from '../core/githubUrl';
 
@@ -192,6 +199,20 @@ test('file extension filter limits files and drops commits without matching file
   const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
   assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/Calc.java']);
   assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')));
+});
+
+test('the default extension list keeps source files and skips docs', async () => {
+  const opts = options({ keywords: ['fix'], fileExtensions: [...SOURCE_FILE_EXTENSIONS] });
+  await collectCommitChanges(opts);
+  const data = resultOf(opts);
+  const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
+  assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/util.py', 'src/Calc.java']);
+  assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')), 'README-only commit dropped');
+});
+
+test('package.json default for warnPriority.fileExtensions matches SOURCE_FILE_EXTENSIONS', () => {
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+  assert.deepEqual(pkg.contributes.configuration.properties['warnPriority.fileExtensions'].default, [...SOURCE_FILE_EXTENSIONS]);
 });
 
 test('regex keywords and max commit limit', async () => {

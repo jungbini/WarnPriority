@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName } from './core/collector';
+import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName, SOURCE_FILE_EXTENSIONS } from './core/collector';
 import { CancelledError } from './core/git';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
@@ -105,7 +105,7 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
             keywords,
             caseSensitive: config.get<boolean>('caseSensitive', false),
             useRegex: config.get<boolean>('useRegex', false),
-            fileExtensions: config.get<string[]>('fileExtensions', []),
+            fileExtensions: config.get<string[]>('fileExtensions', [...SOURCE_FILE_EXTENSIONS]),
             includeMergeCommits: config.get<boolean>('includeMergeCommits', false),
             ignoreWhitespace: config.get<boolean>('ignoreWhitespace', false),
             maxCommits: config.get<number>('maxCommits', 0),

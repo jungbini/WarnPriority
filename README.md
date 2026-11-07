@@ -114,7 +114,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
 | `warnPriority.outputDirectory` | `""` | 결과 저장 폴더(안에 저장소별 폴더 생성). 비우면 `<워크스페이스>/warnpriority-output` |
-| `warnPriority.fileExtensions` | `[]` | 특정 확장자 파일만 수집. 예: `["java"]` |
+| `warnPriority.fileExtensions` | 소스 코드 확장자 목록 (아래) | 이 확장자의 파일만 수집. Java만: `["java"]`, 모든 파일: `[]` |
 | `warnPriority.maxCommits` | `0` | 최대 커밋 수(최신순). `0` = 제한 없음 |
 | `warnPriority.caseSensitive` | `false` | 키워드 대소문자 구분 |
 | `warnPriority.useRegex` | `false` | 키워드를 정규식(POSIX 확장)으로 처리 |
@@ -122,6 +122,22 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | `warnPriority.ignoreWhitespace` | `false` | 공백만 바뀐 변경 무시 |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
 
+
+### 수집 대상 파일
+
+정적 분석이 가능한 **소스 코드 파일만** 수집합니다. 기본값은 정적 분석기가 지원하는 언어의 확장자입니다.
+
+`java kt kts scala groovy c h cc cpp cxx hh hpp hxx cs go rs py js jsx mjs cjs ts tsx php rb swift m mm`
+
+README·XML·YAML·빌드 설정·이미지처럼 코드가 아닌 파일은 JSON에도, `before/`·`after/` 폴더에도 들어가지 않습니다.
+그런 파일만 바꾼 커밋은 결과에서 빠집니다(google/gson `fix, bug`: 449 → 380 커밋).
+분석기가 한 언어만 다룬다면 그 언어로 좁히는 것이 좋습니다. 예를 들어 Java만 수집하려면 설정(`settings.json`)에 다음을 추가합니다.
+
+```json
+"warnPriority.fileExtensions": ["java"]
+```
+
+어떤 확장자로 수집했는지는 출력 창(`WarnPriority`) 로그의 `File extensions:` 줄에 남습니다.
 ## 동작 방식
 
 - GitHub REST API 대신 **`git clone --bare`** 로 저장소를 받아 로컬에서 `git log --grep … -p`로 분석합니다.
@@ -150,7 +166,7 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out-dir results
   ```
 
-  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`, `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
+  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자, `--ext all`: 모든 파일), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 - 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,

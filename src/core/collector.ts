@@ -8,6 +8,20 @@ import { ensureBareClone, resolveStartCommit } from './repoCache';
 import { ProgressEvent, RepoRef } from './types';
 import { JsonArrayWriter, RunSummary } from './writers';
 
+/**
+ * Default file filter: source files of languages that static analyzers
+ * handle (Java: SpotBugs/PMD/Checkstyle, C/C++: cppcheck/clang-tidy, Python:
+ * pylint, JS/TS: ESLint, ...). Docs, build files, data and images are skipped.
+ * Keep in sync with the "warnPriority.fileExtensions" default in package.json.
+ */
+export const SOURCE_FILE_EXTENSIONS: readonly string[] = [
+  'java', 'kt', 'kts', 'scala', 'groovy',
+  'c', 'h', 'cc', 'cpp', 'cxx', 'hh', 'hpp', 'hxx',
+  'cs', 'go', 'rs', 'py',
+  'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx',
+  'php', 'rb', 'swift', 'm', 'mm',
+];
+
 export interface CollectOptions {
   repo: RepoRef;
   /** Commit message keywords; a commit matches if its message contains any of them. Empty = all commits. */
@@ -15,7 +29,7 @@ export interface CollectOptions {
   caseSensitive: boolean;
   /** Treat keywords as (POSIX extended) regular expressions instead of plain text. */
   useRegex: boolean;
-  /** Only collect changes to files with these extensions (e.g. ["java", ".py"]). Empty = all files. */
+  /** Only collect changes to files with these extensions (e.g. ["java"]). Empty = all files. */
   fileExtensions: string[];
   includeMergeCommits: boolean;
   ignoreWhitespace: boolean;
@@ -68,6 +82,11 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
 
   const keywords = opts.keywords.map((k) => k.trim()).filter((k) => k.length > 0);
   const pathspecs = toPathspecs(opts.fileExtensions);
+  opts.log?.(
+    pathspecs.length > 0
+      ? `File extensions: ${pathspecs.map((p) => p.replace(':(icase)*', '')).join(' ')}`
+      : 'File extensions: all files',
+  );
   const revFilters: string[] = [];
   for (const k of keywords) {
     revFilters.push(`--grep=${k}`);
