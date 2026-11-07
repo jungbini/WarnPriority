@@ -8,6 +8,8 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
 [Releases](https://github.com/jungbini/WarnPriority/releases)에서 최신 `warnpriority-<버전>.vsix`를 내려받아,
 VS Code 확장(Extensions) 보기 → `···` → **VSIX에서 설치(Install from VSIX...)** 로 설치합니다.
 (Git이 설치되어 있어야 합니다.)
+새 버전을 설치한 뒤에는 VS Code 창을 다시 로드(명령 팔레트 → `Developer: Reload Window`)해야 새 버전이 실행됩니다.
+실행 중인 버전은 출력 창(`WarnPriority`) 로그의 `WarnPriority v<버전>`에서 확인할 수 있습니다.
 
 ## 사용법
 
@@ -114,7 +116,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
 | `warnPriority.outputDirectory` | `""` | 결과 저장 폴더(안에 저장소별 폴더 생성). 비우면 `<워크스페이스>/warnpriority-output` |
-| `warnPriority.fileExtensions` | 소스 코드 확장자 목록 (아래) | 이 확장자의 파일만 수집. Java만: `["java"]`, 모든 파일: `[]` |
+| `warnPriority.fileExtensions` | 소스 코드 확장자 목록 (아래) | 이 확장자의 파일만 수집. Java만: `["java"]`. 비워 두면 기본 목록 |
 | `warnPriority.maxCommits` | `0` | 최대 커밋 수(최신순). `0` = 제한 없음 |
 | `warnPriority.caseSensitive` | `false` | 키워드 대소문자 구분 |
 | `warnPriority.useRegex` | `false` | 키워드를 정규식(POSIX 확장)으로 처리 |
@@ -137,6 +139,7 @@ README·XML·YAML·빌드 설정·이미지처럼 코드가 아닌 파일은 JSO
 "warnPriority.fileExtensions": ["java"]
 ```
 
+설정을 비워 두어도(`[]`) 기본 목록이 적용되므로, XML·README 같은 소스 코드가 아닌 파일은 확장자를 직접 목록에 넣지 않는 한 수집되지 않습니다.
 어떤 확장자로 수집했는지는 출력 창(`WarnPriority`) 로그의 `File extensions:` 줄에 남습니다.
 ## 동작 방식
 
@@ -166,7 +169,7 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out-dir results
   ```
 
-  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자, `--ext all`: 모든 파일), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
+  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 - 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,

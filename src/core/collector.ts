@@ -29,7 +29,11 @@ export interface CollectOptions {
   caseSensitive: boolean;
   /** Treat keywords as (POSIX extended) regular expressions instead of plain text. */
   useRegex: boolean;
-  /** Only collect changes to files with these extensions (e.g. ["java"]). Empty = all files. */
+  /**
+   * Only collect changes to files with these extensions (e.g. ["java"]).
+   * Empty means SOURCE_FILE_EXTENSIONS: non-source files (xml, md, ...) are
+   * never collected unless their extension is listed explicitly.
+   */
   fileExtensions: string[];
   includeMergeCommits: boolean;
   ignoreWhitespace: boolean;
@@ -81,12 +85,11 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
   opts.log?.(`Reading history of ${start.ref} (${start.sha})`);
 
   const keywords = opts.keywords.map((k) => k.trim()).filter((k) => k.length > 0);
-  const pathspecs = toPathspecs(opts.fileExtensions);
-  opts.log?.(
-    pathspecs.length > 0
-      ? `File extensions: ${pathspecs.map((p) => p.replace(':(icase)*', '')).join(' ')}`
-      : 'File extensions: all files',
-  );
+  let pathspecs = toPathspecs(opts.fileExtensions);
+  if (pathspecs.length === 0) {
+    pathspecs = toPathspecs([...SOURCE_FILE_EXTENSIONS]);
+  }
+  opts.log?.(`File extensions: ${pathspecs.map((p) => p.replace(':(icase)*', '')).join(' ')}`);
   const revFilters: string[] = [];
   for (const k of keywords) {
     revFilters.push(`--grep=${k}`);

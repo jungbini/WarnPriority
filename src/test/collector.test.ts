@@ -114,13 +114,13 @@ test('collects only commits whose message contains the keyword (case-insensitive
   assert.equal(result.ref, 'main');
   assert.equal(result.outputFile, path.join(opts.outputDir, 'result.json'));
   assert.equal(result.summary.complete, true);
-  assert.equal(result.summary.matchedCommits, 4);
+  assert.equal(result.summary.matchedCommits, 3); // "docs: FIX readme" only changed README.md
 
   const data = resultOf(opts);
   assert.ok(Array.isArray(data));
   const messages = data.map((c: { message: string }) => c.message.split('\n')[0]);
-  assert.deepEqual(messages, ['Remove Old (fix build)', 'bugfix: wrong constant', 'docs: FIX readme', 'Fix division by zero']);
-  assert.deepEqual(data[3].files, [{ file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [3] }] }]);
+  assert.deepEqual(messages, ['Remove Old (fix build)', 'bugfix: wrong constant', 'Fix division by zero']);
+  assert.deepEqual(data[2].files, [{ file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [3] }] }]);
   assert.deepEqual(data[0].files, [{ file: 'src/Old.java', diff: [{ type: 'deleted', before: [1], after: [] }] }]);
 });
 
@@ -171,7 +171,7 @@ test('added files only get an after/ copy, deleted files only a before/ copy', a
   assert.deepEqual(readdirSync(path.join(opts.outputDir, initial)), ['after']);
   assert.deepEqual(readdirSync(path.join(opts.outputDir, removal)), ['before']);
   assert.equal(readFileSync(path.join(opts.outputDir, removal, 'before', 'src/Old.java'), 'utf8'), 'class Old {}\n');
-  assert.equal(result.summary.savedFiles, 3); // README.md + Calc.java after, Old.java before
+  assert.equal(result.summary.savedFiles, 2); // Calc.java after, Old.java before (README.md is not source code)
 });
 
 test('root commit has a null parent', async () => {
@@ -181,7 +181,7 @@ test('root commit has a null parent', async () => {
   assert.equal(initial.parent, null);
   assert.deepEqual(
     initial.files.map((f: { file: string }) => f.file),
-    ['README.md', 'src/Calc.java'],
+    ['src/Calc.java'],
   );
 });
 
@@ -213,6 +213,21 @@ test('the default extension list keeps source files and skips docs', async () =>
 test('package.json default for warnPriority.fileExtensions matches SOURCE_FILE_EXTENSIONS', () => {
   const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
   assert.deepEqual(pkg.contributes.configuration.properties['warnPriority.fileExtensions'].default, [...SOURCE_FILE_EXTENSIONS]);
+});
+
+test('an empty extension list still never collects non-source files', async () => {
+  const empty = options({ keywords: ['docs: FIX readme'], fileExtensions: [] });
+  const result = await collectCommitChanges(empty);
+  assert.equal(result.outputFile, null, 'README.md-only commit is not recorded');
+  assert.equal(existsSync(empty.outputDir), false);
+
+  const blank = options({ keywords: ['docs: FIX readme'], fileExtensions: [' ', ''] });
+  assert.equal((await collectCommitChanges(blank)).outputFile, null);
+
+  // Listed explicitly, a non-source extension is collected.
+  const md = options({ keywords: ['docs: FIX readme'], fileExtensions: ['md'] });
+  await collectCommitChanges(md);
+  assert.deepEqual(resultOf(md)[0].files.map((f: { file: string }) => f.file), ['README.md']);
 });
 
 test('regex keywords and max commit limit', async () => {
@@ -279,7 +294,7 @@ test('odd file names and non-UTF-8 / CRLF content are saved byte for byte', asyn
   const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0d, 0x0a, 0x78, 0x0d, 0x0a]); // "café\r\nx\r\n" in Latin-1
   commit({ 'dir with space/파일 이름.txt': 'one\ntwo\n', 'latin1.txt': latin1 }, 'odd-paths base');
   commit({ 'dir with space/파일 이름.txt': 'one\nTWO\n', 'latin1.txt': Buffer.concat([latin1, Buffer.from('y\r\n')]) }, 'odd-paths change');
-  const opts = options({ keywords: ['odd-paths change'] });
+  const opts = options({ keywords: ['odd-paths change'], fileExtensions: ['txt'] });
   await collectCommitChanges(opts);
   const [entry] = resultOf(opts);
   assert.deepEqual(

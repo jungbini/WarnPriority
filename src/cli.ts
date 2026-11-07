@@ -4,7 +4,7 @@
  *
  *   npm run compile
  *   node out/cli.js https://github.com/owner/repo "fix,bug" [--out-dir dir]
- *        [--ext java,py | --ext all] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
+ *        [--ext java,py] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
  *        [--cache <dir>] [--git <path>]
  */
 import * as os from 'os';
@@ -29,10 +29,10 @@ function describeProgress(e: ProgressEvent): string {
 
 function usage(): never {
   console.error(
-    'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java,py|all] [--max N]\n' +
+    'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java,py] [--max N]\n' +
       '                         [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--cache dir] [--git path]\n' +
       '  <keywords> is a comma-separated list; use "" to collect every commit.\n' +
-      '  --ext defaults to source files of static-analyzable languages; "all" collects every file.',
+      '  --ext defaults to source files of static-analyzable languages.',
   );
   process.exit(2);
 }
@@ -74,9 +74,8 @@ async function main(): Promise<void> {
     keywords,
     caseSensitive: flags['case-sensitive'] === true,
     useRegex: flags.regex === true,
-    // Default: source files only (same as the VS Code setting's default); --ext all = every file.
-    fileExtensions:
-      typeof flags.ext !== 'string' ? [...SOURCE_FILE_EXTENSIONS] : flags.ext.trim() === 'all' ? [] : flags.ext.split(','),
+    // Default (and for an empty list): source files of static-analyzable languages.
+    fileExtensions: typeof flags.ext === 'string' ? flags.ext.split(',') : [...SOURCE_FILE_EXTENSIONS],
     includeMergeCommits: flags.merges === true,
     ignoreWhitespace: flags['ignore-ws'] === true,
     maxCommits: flags.max ? parseInt(flags.max as string, 10) : 0,
@@ -93,7 +92,7 @@ async function main(): Promise<void> {
   }
 
   if (!result.outputFile) {
-    console.log('No commits matched.');
+    console.log('No matching commit changed source code files.');
     return;
   }
   const s = result.summary;

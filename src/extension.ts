@@ -81,7 +81,10 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
   }
 
   running = true;
-  output.appendLine(`[${new Date().toLocaleString()}] ${repo.webUrl ?? repo.cloneUrl} | keywords: ${keywords.join(', ') || '(all commits)'}`);
+  output.appendLine(
+    `[${new Date().toLocaleString()}] WarnPriority v${context.extension.packageJSON.version} | ` +
+      `${repo.webUrl ?? repo.cloneUrl} | keywords: ${keywords.join(', ') || '(all commits)'}`,
+  );
   let result: CollectResult;
   try {
     result = await vscode.window.withProgress(
@@ -170,8 +173,8 @@ async function showResult(result: CollectResult, keywords: string[], output: vsc
   if (!outputFile) {
     vscode.window.showInformationMessage(
       keywords.length > 0
-        ? vscode.l10n.t('No commit message contains "{0}".', keywords.join('", "'))
-        : vscode.l10n.t('The repository has no matching commits.'),
+        ? vscode.l10n.t('No commit whose message contains "{0}" changed source code files.', keywords.join('", "'))
+        : vscode.l10n.t('No commit changed source code files.'),
     );
     return;
   }
