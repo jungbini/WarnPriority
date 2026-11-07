@@ -39,7 +39,7 @@ const commit: CommitRecord = {
   ],
 };
 
-test('toOutputCommit keeps only sha, parent, author, message and per-file diffs', () => {
+test('toOutputCommit keeps sha, parent, author, message and line-numbered per-file diffs', () => {
   assert.deepEqual(toOutputCommit(commit), {
     sha: 'abc',
     parent: 'p1',
@@ -49,12 +49,23 @@ test('toOutputCommit keeps only sha, parent, author, message and per-file diffs'
       {
         file: 'a.c',
         diff: [
-          { type: 'modified', before: ['x = 1;'], after: ['x = 2;', 'y = 3;'] },
-          { type: 'added', code: ['z();'] },
+          {
+            type: 'modified',
+            before: [{ line: 1, code: 'x = 1;' }],
+            after: [
+              { line: 1, code: 'x = 2;' },
+              { line: 2, code: 'y = 3;' },
+            ],
+          },
+          { type: 'added', before: [], after: [{ line: 7, code: 'z();' }] },
         ],
       },
-      { file: 'gone.c', diff: [{ type: 'deleted', code: ['bye'] }] },
-      { file: 'new/name.c', diff: [{ type: 'modified', before: ['a'], after: ['b'] }] },
+      { file: 'gone.c', diff: [{ type: 'deleted', before: [{ line: 1, code: 'bye' }], after: [] }] },
+      {
+        file: 'new/name.c',
+        oldFile: 'old/name.c',
+        diff: [{ type: 'modified', before: [{ line: 1, code: 'a' }], after: [{ line: 1, code: 'b' }] }],
+      },
     ],
   });
   assert.equal(toOutputCommit({ ...commit, parents: [] }).parent, null);

@@ -44,8 +44,9 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
 | `parent` | 부모 커밋 SHA (diff 비교 기준인 첫 번째 부모, 최초 커밋이면 `null`) |
 | `author` | 작성자 `이름 <이메일>` |
 | `message` | 커밋 메시지 전체 |
-| `files[].file` | 파일 경로 (삭제된 파일은 삭제 전 경로, 이름이 바뀐 파일은 바뀐 후 경로) |
-| `files[].diff` | 그 파일에서 추가·삭제·수정된 소스코드 (아래) |
+| `files[].file` | 커밋 후 파일 경로 (삭제된 파일은 삭제 전 경로) |
+| `files[].oldFile` | 커밋 전 파일 경로 — **이름이 바뀐 파일에만** 있음 |
+| `files[].diff` | 그 파일에서 추가·삭제·수정된 소스코드와 줄 번호 (아래) |
 
 ```json
 [
@@ -60,11 +61,11 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
         "diff": [
           {
             "type": "modified",
-            "before": ["       * For compatibility with JSON 1.5 and earlier, we return null for empty"],
-            "after":  ["       * For compatibility with Gson 1.5 and earlier, we return null for empty"]
+            "before": [ { "line": 1118, "code": "       * For compatibility with JSON 1.5 and earlier, we return null for empty" } ],
+            "after":  [ { "line": 1118, "code": "       * For compatibility with Gson 1.5 and earlier, we return null for empty" } ]
           },
-          { "type": "added",   "code": ["..."] },
-          { "type": "deleted", "code": ["..."] }
+          { "type": "added",   "before": [], "after": [ { "line": 1200, "code": "..." } ] },
+          { "type": "deleted", "before": [ { "line": 1300, "code": "..." } ], "after": [] }
         ]
       }
     ]
@@ -72,16 +73,21 @@ GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드�
 ]
 ```
 
-### 변경 유형 (`diff[].type`)
+### 변경 유형과 줄 번호 (`diff[]`)
 
-diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 줄 묶음 하나를 다음 중 하나로 분류합니다. 코드는 줄 단위 배열입니다.
+diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 줄 묶음 하나를 다음 중 하나로 분류합니다.
 
-| `type` | 의미 | 담기는 코드 |
-| --- | --- | --- |
-| `added` (추가) | 줄이 추가되기만 함 | `code`: 추가된 줄 |
-| `deleted` (삭제) | 줄이 삭제되기만 함 | `code`: 삭제된 줄 |
-| `modified` (수정) | 기존 줄이 삭제되고 그 자리에 다른 줄이 들어감 | `before`: 변경 전 줄, `after`: 변경 후 줄 |
+| `type` | 의미 | `before` | `after` |
+| --- | --- | --- | --- |
+| `added` (추가) | 줄이 추가되기만 함 | `[]` | 추가된 줄 |
+| `deleted` (삭제) | 줄이 삭제되기만 함 | 삭제된 줄 | `[]` |
+| `modified` (수정) | 기존 줄이 삭제되고 그 자리에 다른 줄이 들어감 | 변경 전 줄 | 변경 후 줄 |
 
+- 각 줄은 `{ "line": 줄 번호, "code": 코드 }` 형태입니다.
+- `before`의 줄 번호는 **커밋 전 파일**(`git show <parent>:<oldFile 또는 file>`) 기준이고,
+  `after`의 줄 번호는 **커밋 후 파일**(`git show <sha>:<file>`) 기준입니다.
+- 커밋 전 파일에서 `before` 줄들을, 커밋 후 파일에서 `after` 줄들을 빼면 남는 줄(바뀌지 않은 줄)은 **순서대로 1:1로 대응**합니다.
+  정적 분석 경고를 커밋 전/후 버전끼리 맞춰 볼 때, 바뀌지 않은 줄의 줄 번호가 어떻게 밀렸는지 이걸로 계산할 수 있습니다.
 - 바이너리 파일, 내용 변경 없는 이름 변경/권한 변경은 코드 변경이 없으므로 제외됩니다.
 - 중간에 취소해도 그때까지 수집한 커밋은 올바른 JSON 배열로 저장되고 열립니다.
 - 검색 조건(저장소·키워드)은 파일 이름(`<owner>_<repo>_<키워드>_<날짜-시간>.json`)과 출력 창(`WarnPriority`) 로그에 남습니다.

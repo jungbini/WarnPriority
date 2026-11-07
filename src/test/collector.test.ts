@@ -106,11 +106,15 @@ test('collects only commits whose message contains the keyword (case-insensitive
   assert.deepEqual(messages, ['Remove Old (fix build)', 'bugfix: wrong constant', 'docs: FIX readme', 'Fix division by zero']);
 
   const fix = data[3];
-  assert.deepEqual(fix.files, [{ file: 'src/Calc.java', diff: [{ type: 'added', code: ['    if (b == 0) return 0;'] }] }]);
-  assert.deepEqual(data[0].files, [{ file: 'src/Old.java', diff: [{ type: 'deleted', code: ['class Old {}'] }] }]);
+  assert.deepEqual(fix.files, [
+    { file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [{ line: 3, code: '    if (b == 0) return 0;' }] }] },
+  ]);
+  assert.deepEqual(data[0].files, [
+    { file: 'src/Old.java', diff: [{ type: 'deleted', before: [{ line: 1, code: 'class Old {}' }], after: [] }] },
+  ]);
 });
 
-test('result file contains only sha, parent, author, message and per-file diffs', async () => {
+test('result file contains sha, parent, author, message and line-numbered per-file diffs', async () => {
   const opts = options({ keywords: ['bugfix'] });
   await collectCommitChanges(opts);
   const data = readJson(opts.outputFile);
@@ -123,8 +127,11 @@ test('result file contains only sha, parent, author, message and per-file diffs'
       author: 'Tester <tester@example.com>',
       message: 'bugfix: wrong constant',
       files: [
-        { file: 'src/Calc.java', diff: [{ type: 'added', code: ['// bugfix note'] }] },
-        { file: 'src/util.py', diff: [{ type: 'modified', before: ['    return 1'], after: ['    return 2'] }] },
+        { file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [{ line: 7, code: '// bugfix note' }] }] },
+        {
+          file: 'src/util.py',
+          diff: [{ type: 'modified', before: [{ line: 2, code: '    return 1' }], after: [{ line: 2, code: '    return 2' }] }],
+        },
       ],
     },
   ]);
@@ -202,6 +209,26 @@ test('unknown repository gives a readable error and leaves no cache entry', asyn
   const repo = parseRepositoryInput(path.join(root, 'does-not-exist'));
   await assert.rejects(collectCommitChanges(options({ repo })), /Could not clone/);
   assert.ok(!readdirSync(cacheDir).some((d) => d.includes('does-not-exist')));
+});
+
+test('renamed files keep the old path so the before version can be fetched', async () => {
+  const renamedContent = readFileSync(path.join(source, 'src/Calc.java'), 'utf8').replace('class Calc {', 'class Calculator {');
+  commit({ 'src/Calc.java': null, 'src/Calculator.java': renamedContent }, 'Rename Calc to Calculator');
+  const opts = options({ keywords: ['Rename Calc'] });
+  await collectCommitChanges(opts);
+  const [entry] = readJson(opts.outputFile);
+  assert.deepEqual(entry.files, [
+    {
+      file: 'src/Calculator.java',
+      oldFile: 'src/Calc.java',
+      diff: [{ type: 'modified', before: [{ line: 1, code: 'class Calc {' }], after: [{ line: 1, code: 'class Calculator {' }] }],
+    },
+  ]);
+  // The numbered lines match the real file contents on both sides.
+  const before = git(source, 'show', `${entry.parent}:src/Calc.java`).split('\n');
+  const after = git(source, 'show', `${entry.sha}:src/Calculator.java`).split('\n');
+  assert.equal(before[0], 'class Calc {');
+  assert.equal(after[0], 'class Calculator {');
 });
 
 test('helpers', () => {

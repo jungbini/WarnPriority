@@ -96,11 +96,17 @@ export interface RepoRef {
  *       "files": [
  *         { "file": "src/A.java",
  *           "diff": [
- *             { "type": "added",    "code": ["..."] },
- *             { "type": "deleted",  "code": ["..."] },
- *             { "type": "modified", "before": ["..."], "after": ["..."] } ] } ]
+ *             { "type": "modified",
+ *               "before": [ { "line": 11, "code": "return x.length();" } ],
+ *               "after":  [ { "line": 11, "code": "if (x == null) return 0;" },
+ *                           { "line": 12, "code": "return x.length();" } ] },
+ *             { "type": "added",   "before": [], "after": [ { "line": 30, "code": "..." } ] },
+ *             { "type": "deleted", "before": [ { "line": 40, "code": "..." } ], "after": [] } ] } ]
  *     }
  *   ]
+ *
+ * `before` line numbers refer to the file at `parent` (path `oldFile ?? file`),
+ * `after` line numbers to the file at `sha` (path `file`).
  */
 export interface OutputCommit {
   sha: string;
@@ -115,13 +121,23 @@ export interface OutputCommit {
 export interface OutputFile {
   /** Path after the commit (path before the commit for deleted files). */
   file: string;
+  /** Path before the commit, only present when the file was renamed or copied. */
+  oldFile?: string;
   diff: OutputDiff[];
 }
 
-export type OutputDiff =
-  | { type: 'added'; code: string[] }
-  | { type: 'deleted'; code: string[] }
-  | { type: 'modified'; before: string[]; after: string[] };
+export interface OutputDiff {
+  type: ChangeType;
+  /** Removed lines, numbered as in the file before the commit. Empty for "added". */
+  before: OutputLine[];
+  /** Added lines, numbered as in the file after the commit. Empty for "deleted". */
+  after: OutputLine[];
+}
+
+export interface OutputLine {
+  line: number;
+  code: string;
+}
 
 /** Progress events emitted while collecting; the UI decides how to render them. */
 export type ProgressEvent =

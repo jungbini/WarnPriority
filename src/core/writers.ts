@@ -1,6 +1,6 @@
 import { createWriteStream, promises as fs, WriteStream } from 'fs';
 import { once } from 'events';
-import { CommitRecord, OutputCommit, OutputDiff } from './types';
+import { CommitRecord, OutputCommit, OutputDiff, OutputFile, OutputLine } from './types';
 
 /** Totals reported to the UI after a run (not written to the result file). */
 export interface RunSummary {
@@ -22,20 +22,26 @@ export function toOutputCommit(commit: CommitRecord): OutputCommit {
     parent: commit.parents[0] ?? null,
     author: commit.author.email ? `${commit.author.name} <${commit.author.email}>` : commit.author.name,
     message: commit.message,
-    files: commit.files.map((f) => ({
-      file: (f.newPath ?? f.oldPath)!,
-      diff: f.changes.map((c): OutputDiff => {
-        switch (c.type) {
-          case 'added':
-            return { type: 'added', code: c.addedCode };
-          case 'deleted':
-            return { type: 'deleted', code: c.deletedCode };
-          case 'modified':
-            return { type: 'modified', before: c.deletedCode, after: c.addedCode };
-        }
+    files: commit.files.map(
+      (f): OutputFile => ({
+        file: (f.newPath ?? f.oldPath)!,
+        // Needed to fetch the "before" version of a renamed file (git show <parent>:<oldFile>).
+        ...(f.oldPath && f.newPath && f.oldPath !== f.newPath ? { oldFile: f.oldPath } : {}),
+        diff: f.changes.map(
+          (c): OutputDiff => ({
+            type: c.type,
+            before: numbered(c.deletedCode, c.oldStart),
+            after: numbered(c.addedCode, c.newStart),
+          }),
+        ),
       }),
-    })),
+    ),
   };
+}
+
+/** Pairs consecutive lines with their line numbers. `start` is the first line's number. */
+function numbered(lines: string[], start: number): OutputLine[] {
+  return lines.map((code, i) => ({ line: start + i, code }));
 }
 
 /**

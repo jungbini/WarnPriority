@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- `diff`의 각 코드 줄에 줄 번호 추가: `before`/`after`가 `{ "line", "code" }` 배열이 됨
+  (`before`는 커밋 전 파일, `after`는 커밋 후 파일 기준). 모든 유형에서 두 배열이 항상 존재
+  (`added`/`deleted`의 `code` 필드는 `after`/`before`로 대체)
+- 이름이 바뀐 파일에 커밋 전 경로 `oldFile` 추가
+
 ## 0.2.0
 
 - 결과 파일을 커밋 배열 JSON으로 단순화: `sha`, `parent`, `author`, `message`, `files[].file`, `files[].diff`만 저장
