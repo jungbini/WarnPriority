@@ -14,8 +14,6 @@ export interface RunSummary {
   linesDeleted: number;
   /** before/after files written to the commit folders. */
   savedFiles: number;
-  /** Change blocks left out because they touched only comments or blank lines. */
-  skippedNonCodeChanges: number;
   finishedAt: string;
 }
 
@@ -34,13 +32,17 @@ export function toOutputCommit(commit: CommitRecord): OutputCommit {
         diff: f.changes.map(
           (c): OutputDiff => ({
             type: c.type,
-            before: c.deletedLineNumbers,
-            after: c.addedLineNumbers,
+            before: lineNumbers(c.oldStart, c.deletedCode.length),
+            after: lineNumbers(c.newStart, c.addedCode.length),
           }),
         ),
       }),
     ),
   };
+}
+
+function lineNumbers(start: number, count: number): number[] {
+  return Array.from({ length: count }, (_, i) => start + i);
 }
 
 /**

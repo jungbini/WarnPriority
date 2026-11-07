@@ -34,10 +34,6 @@ export interface CodeChange {
   deletedCode: string[];
   /** Lines as they are after the commit (added lines). */
   addedCode: string[];
-  /** Line numbers (old file) of `deletedCode`, element by element. */
-  deletedLineNumbers: number[];
-  /** Line numbers (new file) of `addedCode`, element by element. */
-  addedLineNumbers: number[];
 }
 
 export interface FileChange {

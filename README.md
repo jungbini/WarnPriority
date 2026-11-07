@@ -109,28 +109,6 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 - 바이너리 파일, 내용 변경 없는 이름 변경/권한 변경, 서브모듈 변경은 코드 변경이 없으므로 제외됩니다.
 - 중간에 취소해도 그때까지 수집한 커밋은 올바른 JSON 배열로 저장되고, JSON에 있는 커밋은 모두 커밋 폴더가 있습니다.
 
-### 기록하는 줄: 소스 코드만
-
-JSON에는 **소스 코드가 있는 줄만** 기록합니다(`warnPriority.codeLinesOnly`, 기본 켜짐).
-
-- 주석(Javadoc, Python docstring 포함)이나 빈 줄만 있는 줄은 `before`/`after`에서 빠집니다.
-  주석과 문자열은 파일 전체를 언어별로 분석해 구분하므로, 여러 줄 `/* … */` 안의 줄이나 문자열 안의 `//`도 올바르게 처리합니다.
-- 아래처럼 코드가 그대로인 변경은 기록하지 않습니다.
-  - 주석·빈 줄만 바꾼 변경
-  - 코드 줄 끝의 주석만 바꾼 변경 (`return 1; // one` → `return 1; // uno`)
-  - 줄 끝 공백이나 줄바꿈 문자(CRLF ↔ LF)만 바뀐 변경
-
-  들여쓰기 변경은 기록합니다(Python에서는 들여쓰기가 코드이므로).
-- 코드 변경이 하나도 남지 않은 파일은 JSON에서 빠지고 `before/`·`after/` 사본도 저장하지 않습니다. 그런 커밋도 결과에서 빠집니다.
-- **warning 억제·분석기 설정 주석은 코드로 취급**합니다. 정적 분석 결과를 직접 바꾸기 때문입니다.
-  예: `# type: ignore`, `# noqa`, `# pylint: disable=…`, `// NOPMD`, `// NOSONAR`, `CHECKSTYLE:OFF`, `// eslint-disable-line`, `// @ts-ignore`, `// NOLINT`, `//nolint`, `# rubocop:disable` 등
-- 판단이 애매한 경우에는 코드로 취급합니다(실제 코드 변경을 놓치지 않도록).
-- 지원 언어: Java, Kotlin, Scala, Groovy, C/C++, Objective-C, C#, Go, Rust, Swift, JavaScript/TypeScript, PHP, Python, Ruby.
-  그 밖의 파일은 빈 줄만 제외합니다.
-
-google/gson `fix, bug`의 경우 7,944건 중 1,081건(주석·Javadoc·빈 줄만 바꾼 변경)이 빠져 337개 커밋이 남습니다.
-바뀐 줄을 모두 기록하려면 `warnPriority.codeLinesOnly`를 끄세요.
-
 ## 설정
 
 | 설정 | 기본값 | 설명 |
@@ -142,7 +120,6 @@ google/gson `fix, bug`의 경우 7,944건 중 1,081건(주석·Javadoc·빈 줄�
 | `warnPriority.useRegex` | `false` | 키워드를 정규식(POSIX 확장)으로 처리 |
 | `warnPriority.includeMergeCommits` | `false` | 머지 커밋 포함(첫 번째 부모 기준 diff, Git 2.31+) |
 | `warnPriority.ignoreWhitespace` | `false` | 공백만 바뀐 변경 무시 |
-| `warnPriority.codeLinesOnly` | `true` | 소스 코드 줄만 기록(주석·빈 줄만 바꾼 변경 제외, 위 참고) |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
 
 
@@ -189,7 +166,7 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out-dir results
   ```
 
-  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자, `--ext all`: 모든 파일), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--all-lines`(주석·빈 줄 변경도 기록), `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
+  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자, `--ext all`: 모든 파일), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 - 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,
@@ -210,8 +187,6 @@ src/
    ├─ writers.ts       결과 JSON 스트리밍 저장 (저장 필드 변환: toOutputCommit)
    ├─ commitFiles.ts   커밋별 before/after 파일 저장 (경로 안전성 검사 포함)
    ├─ blobReader.ts    git cat-file --batch 로 파일 내용 읽기
-   ├─ codeLines.ts     언어별 주석/문자열 분석 → 줄마다 코드가 있는지 판정
-   ├─ codeFilter.ts    주석·빈 줄만 바꾼 변경 제외
    ├─ collector.ts     전체 파이프라인
    └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)
 l10n/, package.nls*.json   영어/한국어 UI 문자열 (VS Code 표시 언어에 따라 자동 선택)

@@ -74,31 +74,9 @@ test('classifies added / deleted / modified blocks with correct line numbers', (
       newLines: 2,
       deletedCode: ['    return x.length();'],
       addedCode: ['    if (x == null) return 0;', '    return x.length();'],
-      deletedLineNumbers: [11],
-      addedLineNumbers: [11, 12],
     },
-    {
-      type: 'added',
-      oldStart: 20,
-      oldLines: 0,
-      newStart: 22,
-      newLines: 2,
-      deletedCode: [],
-      addedCode: ['inserted1', 'inserted2'],
-      deletedLineNumbers: [],
-      addedLineNumbers: [22, 23],
-    },
-    {
-      type: 'deleted',
-      oldStart: 30,
-      oldLines: 2,
-      newStart: 31,
-      newLines: 0,
-      deletedCode: ['gone1', 'gone2'],
-      addedCode: [],
-      deletedLineNumbers: [30, 31],
-      addedLineNumbers: [],
-    },
+    { type: 'added', oldStart: 20, oldLines: 0, newStart: 22, newLines: 2, deletedCode: [], addedCode: ['inserted1', 'inserted2'] },
+    { type: 'deleted', oldStart: 30, oldLines: 2, newStart: 31, newLines: 0, deletedCode: ['gone1', 'gone2'], addedCode: [] },
   ]);
   assert.deepEqual(c.stats, { filesChanged: 1, linesAdded: 4, linesDeleted: 3, addedBlocks: 1, deletedBlocks: 1, modifiedBlocks: 1 });
 });
@@ -216,8 +194,6 @@ test('added, deleted, renamed, binary and odd paths', () => {
     newLines: 2,
     deletedCode: [],
     addedCode: ['one', 'two'],
-    deletedLineNumbers: [],
-    addedLineNumbers: [1, 2],
   });
   assert.deepEqual(c.files[1].changes[0], {
     type: 'deleted',
@@ -227,8 +203,6 @@ test('added, deleted, renamed, binary and odd paths', () => {
     newLines: 0,
     deletedCode: ['bye'],
     addedCode: [],
-    deletedLineNumbers: [1],
-    addedLineNumbers: [],
   });
   assert.deepEqual(c.files[4].changes[0].deletedCode, ['crlf']);
   assert.deepEqual(c.files[4].changes[0].addedCode, ['CRLF']);

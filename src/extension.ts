@@ -108,7 +108,6 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
             fileExtensions: config.get<string[]>('fileExtensions', [...SOURCE_FILE_EXTENSIONS]),
             includeMergeCommits: config.get<boolean>('includeMergeCommits', false),
             ignoreWhitespace: config.get<boolean>('ignoreWhitespace', false),
-            codeLinesOnly: config.get<boolean>('codeLinesOnly', true),
             maxCommits: config.get<number>('maxCommits', 0),
             outputDir: path.join(outputRoot, projectDirName(repo)),
             outputFileName: defaultOutputFileName(repo, keywords),
@@ -170,11 +169,9 @@ async function showResult(result: CollectResult, keywords: string[], output: vsc
   const { outputFile, summary } = result;
   if (!outputFile) {
     vscode.window.showInformationMessage(
-      summary.matchedCommits > 0
-        ? vscode.l10n.t('{0} commits matched, but none of them changed source code (only comments, blank lines or other files).', summary.matchedCommits)
-        : keywords.length > 0
-          ? vscode.l10n.t('No commit message contains "{0}".', keywords.join('", "'))
-          : vscode.l10n.t('The repository has no matching commits.'),
+      keywords.length > 0
+        ? vscode.l10n.t('No commit message contains "{0}".', keywords.join('", "'))
+        : vscode.l10n.t('The repository has no matching commits.'),
     );
     return;
   }

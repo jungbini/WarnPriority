@@ -9,6 +9,5 @@
   "config.useRegex": "Treat keywords as POSIX extended regular expressions (e.g. `\\bfix(e[sd])?\\b`) instead of plain text.",
   "config.includeMergeCommits": "Also collect merge commits (diffed against their first parent). Requires Git 2.31+.",
   "config.ignoreWhitespace": "Ignore changes that only touch whitespace.",
-  "config.gitPath": "Path to the Git executable. Empty: the Git used by VS Code's Git extension, or `git` on PATH.",
-  "config.codeLinesOnly": "Record only source code lines. Changed lines that hold only comments (including Javadoc/docstrings) or whitespace are left out of the JSON; a change that touched only such lines, or only a comment on a code line, is not recorded, and files/commits left without code changes are skipped (no before/after copies). Turn off to record every changed line."
+  "config.gitPath": "Path to the Git executable. Empty: the Git used by VS Code's Git extension, or `git` on PATH."
 }

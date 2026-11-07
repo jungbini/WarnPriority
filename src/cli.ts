@@ -4,7 +4,7 @@
  *
  *   npm run compile
  *   node out/cli.js https://github.com/owner/repo "fix,bug" [--out-dir dir]
- *        [--ext java,py | --ext all] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--all-lines]
+ *        [--ext java,py | --ext all] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
  *        [--cache <dir>] [--git <path>]
  */
 import * as os from 'os';
@@ -30,10 +30,9 @@ function describeProgress(e: ProgressEvent): string {
 function usage(): never {
   console.error(
     'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java,py|all] [--max N]\n' +
-      '                         [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--all-lines] [--cache dir] [--git path]\n' +
+      '                         [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--cache dir] [--git path]\n' +
       '  <keywords> is a comma-separated list; use "" to collect every commit.\n' +
-      '  --ext defaults to source files of static-analyzable languages; "all" collects every file.\n' +
-      '  --all-lines also records changes that touch only comments or blank lines.',
+      '  --ext defaults to source files of static-analyzable languages; "all" collects every file.',
   );
   process.exit(2);
 }
@@ -46,7 +45,7 @@ async function main(): Promise<void> {
     const a = args[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      if (['case-sensitive', 'regex', 'merges', 'ignore-ws', 'all-lines', 'quiet'].includes(name)) {
+      if (['case-sensitive', 'regex', 'merges', 'ignore-ws', 'quiet'].includes(name)) {
         flags[name] = true;
       } else if (i + 1 < args.length) {
         flags[name] = args[++i];
@@ -80,7 +79,6 @@ async function main(): Promise<void> {
       typeof flags.ext !== 'string' ? [...SOURCE_FILE_EXTENSIONS] : flags.ext.trim() === 'all' ? [] : flags.ext.split(','),
     includeMergeCommits: flags.merges === true,
     ignoreWhitespace: flags['ignore-ws'] === true,
-    codeLinesOnly: flags['all-lines'] !== true,
     maxCommits: flags.max ? parseInt(flags.max as string, 10) : 0,
     outputDir,
     outputFileName: defaultOutputFileName(repo, keywords),
@@ -95,19 +93,14 @@ async function main(): Promise<void> {
   }
 
   if (!result.outputFile) {
-    console.log(
-      result.summary.matchedCommits > 0
-        ? `${result.summary.matchedCommits} commit(s) matched, but none changed source code.`
-        : 'No commits matched.',
-    );
+    console.log('No commits matched.');
     return;
   }
   const s = result.summary;
   console.log(
     `${result.cancelled ? 'Cancelled; partial results' : 'Done'}: ${s.commitsWithCodeChanges}/${s.matchedCommits} commits, ` +
       `${s.codeChanges.total} code changes (added ${s.codeChanges.added}, deleted ${s.codeChanges.deleted}, modified ${s.codeChanges.modified}), ` +
-      `${s.savedFiles} before/after files saved` +
-      (s.skippedNonCodeChanges > 0 ? `, ${s.skippedNonCodeChanges} comment/blank-only changes skipped` : ''),
+      `${s.savedFiles} before/after files saved`,
   );
   console.log(result.outputFile);
 }

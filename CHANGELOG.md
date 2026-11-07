@@ -1,15 +1,5 @@
 # Changelog
 
-## 0.6.0
-
-- JSON에 소스 코드 줄만 기록(`warnPriority.codeLinesOnly`, 기본 켜짐):
-  주석(Javadoc·docstring 포함)·빈 줄은 줄 번호 목록에서 빠지고, 주석·빈 줄만 바꾸거나 코드 줄의 주석만 바꾼 변경,
-  줄 끝 공백·줄바꿈 문자만 바뀐 변경은 기록하지 않음. 코드 변경이 없는 파일·커밋은 JSON과 커밋 폴더에서 제외
-- 언어별 주석/문자열 분석(Java, Kotlin, Scala, Groovy, C/C++, Objective-C, C#, Go, Rust, Swift, JS/TS, PHP, Python, Ruby)
-- warning 억제·분석기 설정 주석(`# type: ignore`, `# noqa`, `// NOPMD`, `// NOSONAR`, `// eslint-disable…`, `// @ts-ignore`, `// NOLINT` 등)은 코드로 취급
-- 커밋은 찾았지만 코드 변경이 없을 때 그 사실을 알려 줌
-- CLI: `--all-lines`로 모든 변경 줄 기록
-
 ## 0.5.0
 
 - 정적 분석이 가능한 소스 코드 파일만 기본으로 수집: `warnPriority.fileExtensions` 기본값을
