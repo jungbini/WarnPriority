@@ -3,6 +3,12 @@
 GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드가 들어간 커밋**을 찾아, 그 커밋에서 **추가·삭제·수정된 줄 번호**를 JSON으로 저장하고, 바뀐 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 두는 VS Code 확장입니다.
 수정 전/후 파일에 정적 분석기를 돌린 뒤, JSON의 줄 번호를 기준으로 warning이 어떻게 바뀌었는지 비교하는 데 쓰도록 만들었습니다.
 
+## 설치
+
+[Releases](https://github.com/jungbini/WarnPriority/releases)에서 최신 `warnpriority-<버전>.vsix`를 내려받아,
+VS Code 확장(Extensions) 보기 → `···` → **VSIX에서 설치(Install from VSIX...)** 로 설치합니다.
+(Git이 설치되어 있어야 합니다.)
+
 ## 사용법
 
 1. 명령 팔레트(`Ctrl+Shift+P` / `Cmd+Shift+P`)에서 **`WarnPriority: GitHub 커밋에서 변경된 코드 수집`**
@@ -147,6 +153,9 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`, `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
+- 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,
+  GitHub Actions의 **Release** 워크플로를 실행(Run workflow)하거나 `v<버전>` 태그를 푸시합니다.
+  워크플로가 테스트 → `.vsix` 빌드 → 릴리스 생성(노트는 CHANGELOG의 해당 버전 항목)까지 처리합니다.
 
 ### 구조
 

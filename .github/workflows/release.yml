@@ -1,0 +1,82 @@
+# Builds the extension and publishes it as a GitHub release with the .vsix attached.
+#
+# Release a new version:
+#   1. bump "version" in package.json and add a "## <version>" section to CHANGELOG.md
+#   2. either run this workflow from the Actions tab ("Run workflow"),
+#      or push a matching tag:  git tag v<version> && git push origin v<version>
+# The release is named after package.json's version (tag v<version>); its notes
+# are that version's CHANGELOG section. An existing release is never overwritten.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Determine version
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "::error::Release $tag already exists. Bump the version in package.json first."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Package .vsix
+        run: npx --yes @vscode/vsce@4.1.0 package --skip-license -o "warnpriority-${{ steps.version.outputs.version }}.vsix"
+
+      - name: Write release notes
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          # The "## <version>" section of CHANGELOG.md
+          awk -v v="$version" '$0 == "## " v {found=1; next} /^## / {found=0} found' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ## 설치
+
+          1. 아래 Assets에서 \`warnpriority-$version.vsix\`를 내려받습니다.
+          2. VS Code 확장(Extensions) 보기 → 오른쪽 위 \`···\` → **VSIX에서 설치(Install from VSIX...)** 에서 파일을 선택합니다.
+             (터미널: \`code --install-extension warnpriority-$version.vsix\`)
+
+          Git이 설치되어 있어야 합니다. 사용법은 [README](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md)를 참고하세요.
+          EOF
+          cat notes.md
+
+      - name: Create release
+        run: >
+          gh release create "${{ steps.version.outputs.tag }}"
+          "warnpriority-${{ steps.version.outputs.version }}.vsix"
+          --target "$GITHUB_SHA"
+          --title "WarnPriority ${{ steps.version.outputs.tag }}"
+          --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
