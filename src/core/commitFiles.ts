@@ -1,7 +1,40 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { BlobReader } from './blobReader';
-import { CommitRecord } from './types';
+import { CommitRecord, FileChange } from './types';
+
+export interface FileContents {
+  file: FileChange;
+  /** Content at the first parent; null for added files (or if it could not be read). */
+  before: Buffer | null;
+  /** Content at the commit; null for deleted files (or if it could not be read). */
+  after: Buffer | null;
+}
+
+/** Reads the before/after contents of every changed file of a commit. */
+export async function readCommitFiles(
+  reader: BlobReader,
+  commit: CommitRecord,
+  warn: (message: string) => void,
+): Promise<FileContents[]> {
+  const parent = commit.parents[0] ?? null;
+  const read = async (rev: string | null, repoPath: string | null): Promise<Buffer | null> => {
+    if (!rev || repoPath === null) {
+      return null;
+    }
+    const content = await reader.read(rev, repoPath);
+    if (content === null) {
+      warn(`Could not read "${repoPath}" at ${rev}`);
+    }
+    return content;
+  };
+  return Promise.all(
+    commit.files.map(async (file) => {
+      const [before, after] = await Promise.all([read(parent, file.oldPath), read(commit.sha, file.newPath)]);
+      return { file, before, after };
+    }),
+  );
+}
 
 /**
  * Saves the changed files of a commit, before and after the change:
@@ -15,21 +48,20 @@ import { CommitRecord } from './types';
  *
  * @returns the number of files written
  */
-export async function saveCommitFiles(
-  reader: BlobReader,
+export async function writeCommitFiles(
+  files: FileContents[],
   commit: CommitRecord,
   outputDir: string,
   warn: (message: string) => void,
 ): Promise<number> {
   const commitDir = path.join(outputDir, commit.sha);
-  const parent = commit.parents[0] ?? null;
   const jobs: Promise<boolean>[] = [];
-  for (const f of commit.files) {
-    if (parent && f.oldPath) {
-      jobs.push(saveFile(reader, parent, f.oldPath, path.join(commitDir, 'before'), warn));
+  for (const { file, before, after } of files) {
+    if (before && file.oldPath) {
+      jobs.push(writeFile(before, file.oldPath, path.join(commitDir, 'before'), warn));
     }
-    if (f.newPath) {
-      jobs.push(saveFile(reader, commit.sha, f.newPath, path.join(commitDir, 'after'), warn));
+    if (after && file.newPath) {
+      jobs.push(writeFile(after, file.newPath, path.join(commitDir, 'after'), warn));
     }
   }
   const saved = await Promise.all(jobs);
@@ -39,21 +71,10 @@ export async function saveCommitFiles(
 /** Errors that will hit every following file too: stop instead of warning per file. */
 const FATAL_WRITE_ERRORS = new Set(['ENOSPC', 'EDQUOT', 'EROFS']);
 
-async function saveFile(
-  reader: BlobReader,
-  rev: string,
-  repoPath: string,
-  baseDir: string,
-  warn: (message: string) => void,
-): Promise<boolean> {
+async function writeFile(content: Buffer, repoPath: string, baseDir: string, warn: (message: string) => void): Promise<boolean> {
   const target = safeJoin(baseDir, repoPath);
   if (!target) {
-    warn(`Skipped unsafe path "${repoPath}" (${rev})`);
-    return false;
-  }
-  const content = await reader.read(rev, repoPath);
-  if (content === null) {
-    warn(`Could not read "${repoPath}" at ${rev}`);
+    warn(`Skipped unsafe path "${repoPath}"`);
     return false;
   }
   try {

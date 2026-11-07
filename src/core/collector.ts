@@ -1,9 +1,10 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { BlobReader } from './blobReader';
-import { saveCommitFiles } from './commitFiles';
+import { filterCodeChanges } from './codeFilter';
+import { readCommitFiles, writeCommitFiles } from './commitFiles';
 import { CancelledError, GitContext, GitError, runGit, streamGitLines } from './git';
-import { GitLogParser, LOG_FORMAT } from './logParser';
+import { computeStats, GitLogParser, LOG_FORMAT } from './logParser';
 import { ensureBareClone, resolveStartCommit } from './repoCache';
 import { ProgressEvent, RepoRef } from './types';
 import { JsonArrayWriter, RunSummary } from './writers';
@@ -33,6 +34,12 @@ export interface CollectOptions {
   fileExtensions: string[];
   includeMergeCommits: boolean;
   ignoreWhitespace: boolean;
+  /**
+   * Record only lines that contain source code: changed lines holding only
+   * comments or whitespace are left out, and changes made only of such lines
+   * (and files/commits left without changes) are not recorded at all.
+   */
+  codeLinesOnly: boolean;
   /** 0 = no limit. */
   maxCommits: number;
   /**
@@ -125,6 +132,7 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     linesAdded: 0,
     linesDeleted: 0,
     savedFiles: 0,
+    skippedNonCodeChanges: 0,
     finishedAt: '',
   };
   const outputFile = path.join(opts.outputDir, opts.outputFileName);
@@ -171,6 +179,10 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
     ...tail,
   ];
 
+  const createdOutputDir = !(await fs.stat(opts.outputDir).then(
+    () => true,
+    () => false,
+  ));
   await fs.mkdir(opts.outputDir, { recursive: true });
   const writer = new JsonArrayWriter(outputFile);
   const reader = new BlobReader(ctx, repoDir);
@@ -183,6 +195,16 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
       return;
     }
     summary.matchedCommits++;
+    let contents = commit.files.length > 0 ? await readCommitFiles(reader, commit, warn) : [];
+    if (opts.codeLinesOnly) {
+      contents = contents.flatMap((c) => {
+        const { changes, dropped } = filterCodeChanges(c.file, c.before, c.after);
+        summary.skippedNonCodeChanges += dropped;
+        return changes.length > 0 ? [{ ...c, file: { ...c.file, changes } }] : [];
+      });
+      commit.files = contents.map((c) => c.file);
+      commit.stats = computeStats(commit.files);
+    }
     if (commit.files.length > 0) {
       summary.commitsWithCodeChanges++;
       summary.filesChanged += commit.stats.filesChanged;
@@ -193,7 +215,7 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
       summary.codeChanges.modified += commit.stats.modifiedBlocks;
       summary.codeChanges.total += commit.stats.addedBlocks + commit.stats.deletedBlocks + commit.stats.modifiedBlocks;
       // Files first: every commit listed in the JSON then has its folder, even after a cancel.
-      summary.savedFiles += await saveCommitFiles(reader, commit, opts.outputDir, warn);
+      summary.savedFiles += await writeCommitFiles(contents, commit, opts.outputDir, warn);
       await writer.writeCommit(commit);
     }
     const now = Date.now();
@@ -221,8 +243,15 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
   }
 
   summary.finishedAt = new Date().toISOString();
-  if (summary.matchedCommits === 0 && !result.cancelled) {
+  if (opts.codeLinesOnly) {
+    opts.log?.(`Skipped ${summary.skippedNonCodeChanges} change(s) that touched only comments or blank lines`);
+  }
+  if (summary.commitsWithCodeChanges === 0 && !result.cancelled) {
+    // Nothing to record (e.g. the matching commits only edited comments).
     await writer.discard();
+    if (createdOutputDir) {
+      await fs.rmdir(opts.outputDir).catch(() => undefined);
+    }
     result.outputFile = null;
     return result;
   }

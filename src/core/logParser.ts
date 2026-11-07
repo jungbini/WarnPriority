@@ -259,6 +259,8 @@ export class GitLogParser {
       newLines: b.added.length,
       deletedCode: b.deleted,
       addedCode: b.added,
+      deletedLineNumbers: b.deleted.map((_, k) => b.oldStart + k),
+      addedLineNumbers: b.added.map((_, k) => b.newStart + k),
     });
   }
 
@@ -301,13 +303,13 @@ function emptyStats(): CommitStats {
   return { filesChanged: 0, linesAdded: 0, linesDeleted: 0, addedBlocks: 0, deletedBlocks: 0, modifiedBlocks: 0 };
 }
 
-function computeStats(files: FileChange[]): CommitStats {
+export function computeStats(files: FileChange[]): CommitStats {
   const s = emptyStats();
   s.filesChanged = files.length;
   for (const f of files) {
     for (const c of f.changes) {
-      s.linesAdded += c.newLines;
-      s.linesDeleted += c.oldLines;
+      s.linesAdded += c.addedCode.length;
+      s.linesDeleted += c.deletedCode.length;
       if (c.type === 'added') {
         s.addedBlocks++;
       } else if (c.type === 'deleted') {

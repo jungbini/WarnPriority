@@ -62,6 +62,7 @@ function options(overrides: Partial<CollectOptions>): CollectOptions {
     fileExtensions: [],
     includeMergeCommits: false,
     ignoreWhitespace: false,
+    codeLinesOnly: true,
     maxCommits: 0,
     outputDir: path.join(root, `out-${Math.random().toString(36).slice(2)}`),
     outputFileName: 'result.json',
@@ -134,10 +135,8 @@ test('result file contains sha, parent, author, message and per-file line number
       parent: git(source, 'rev-parse', `${commitSha}^`).trim(),
       author: 'Tester <tester@example.com>',
       message: 'bugfix: wrong constant',
-      files: [
-        { file: 'src/Calc.java', diff: [{ type: 'added', before: [], after: [7] }] },
-        { file: 'src/util.py', diff: [{ type: 'modified', before: [2], after: [2] }] },
-      ],
+      // The Calc.java change of this commit only added the comment "// bugfix note".
+      files: [{ file: 'src/util.py', diff: [{ type: 'modified', before: [2], after: [2] }] }],
     },
   ]);
   // Diff blocks are written on one line each.
@@ -151,14 +150,14 @@ test('saves the changed files before/after the commit in a folder named by the c
   const parent = git(source, 'rev-parse', `${commitSha}^`).trim();
   assert.deepEqual(readdirSync(opts.outputDir).sort(), [commitSha, 'result.json']);
   assert.deepEqual(readdirSync(path.join(opts.outputDir, commitSha)).sort(), ['after', 'before']);
-  assert.equal(result.summary.savedFiles, 4);
+  assert.equal(result.summary.savedFiles, 2);
 
-  for (const file of ['src/Calc.java', 'src/util.py']) {
-    assert.equal(readFileSync(path.join(opts.outputDir, commitSha, 'before', file), 'utf8'), git(source, 'show', `${parent}:${file}`));
-    assert.equal(readFileSync(path.join(opts.outputDir, commitSha, 'after', file), 'utf8'), git(source, 'show', `${commitSha}:${file}`));
-  }
+  const file = 'src/util.py';
+  assert.equal(readFileSync(path.join(opts.outputDir, commitSha, 'before', file), 'utf8'), git(source, 'show', `${parent}:${file}`));
+  assert.equal(readFileSync(path.join(opts.outputDir, commitSha, 'after', file), 'utf8'), git(source, 'show', `${commitSha}:${file}`));
+  // Calc.java only got a comment in this commit: no copy is saved for it.
+  assert.ok(!existsSync(path.join(opts.outputDir, commitSha, 'after', 'src/Calc.java')));
   // The JSON line numbers point at the changed lines of these files.
-  assert.equal(savedLines(opts, commitSha, 'after', 'src/Calc.java')[7 - 1], '// bugfix note');
   assert.equal(savedLines(opts, commitSha, 'before', 'src/util.py')[2 - 1], '    return 1');
   assert.equal(savedLines(opts, commitSha, 'after', 'src/util.py')[2 - 1], '    return 2');
 });
@@ -197,7 +196,8 @@ test('file extension filter limits files and drops commits without matching file
   await collectCommitChanges(opts);
   const data = resultOf(opts);
   const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
-  assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/Calc.java']);
+  // "bugfix: wrong constant" only added a comment to Calc.java, so it has no Java code change.
+  assert.deepEqual(files, ['src/Old.java', 'src/Calc.java']);
   assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')));
 });
 
@@ -206,7 +206,7 @@ test('the default extension list keeps source files and skips docs', async () =>
   await collectCommitChanges(opts);
   const data = resultOf(opts);
   const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
-  assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/util.py', 'src/Calc.java']);
+  assert.deepEqual(files, ['src/Old.java', 'src/util.py', 'src/Calc.java']);
   assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')), 'README-only commit dropped');
 });
 
@@ -273,6 +273,45 @@ test('renamed files keep the old path; before/ uses it', async () => {
   ]);
   assert.equal(savedLines(opts, entry.sha, 'before', 'src/Calc.java')[0], 'class Calc {');
   assert.equal(savedLines(opts, entry.sha, 'after', 'src/Calculator.java')[0], 'class Calculator {');
+});
+
+test('changes to comments and blank lines are not recorded; code lines are, without blank lines', async () => {
+  commit({ 'src/Comments.java': 'class Comments {\n  int f() {\n    return 1;\n  }\n}\n' }, 'add Comments');
+  commit(
+    {
+      'src/Comments.java':
+        '/** Docs for Comments. */\nclass Comments {\n  // explain f\n\n  int f() {\n    return 1; // the answer\n  }\n}\n',
+    },
+    'comment-only change',
+  );
+  commit(
+    {
+      'src/Comments.java':
+        '/** Docs for Comments. */\nclass Comments {\n  // explain f\n\n  int f() {\n    log("f called"); // trace\n\n    return 2; // the answer\n  }\n}\n',
+    },
+    'mixed change',
+  );
+
+  // Only comments and a blank line changed: nothing is recorded, not even an empty folder.
+  const commentOnly = options({ keywords: ['comment-only change'] });
+  const r1 = await collectCommitChanges(commentOnly);
+  assert.equal(r1.outputFile, null);
+  assert.equal(r1.summary.matchedCommits, 1);
+  assert.equal(r1.summary.commitsWithCodeChanges, 0);
+  assert.ok(r1.summary.skippedNonCodeChanges > 0);
+  assert.equal(existsSync(commentOnly.outputDir), false);
+
+  // Code lines are recorded; the blank line 7 inside the block is not.
+  const mixed = options({ keywords: ['mixed change'] });
+  await collectCommitChanges(mixed);
+  const [entry] = resultOf(mixed);
+  assert.deepEqual(entry.files, [{ file: 'src/Comments.java', diff: [{ type: 'modified', before: [6], after: [6, 8] }] }]);
+  assert.equal(savedLines(mixed, entry.sha, 'after', 'src/Comments.java')[8 - 1], '    return 2; // the answer');
+
+  // With codeLinesOnly off every changed line is recorded.
+  const raw = options({ keywords: ['comment-only change'], codeLinesOnly: false });
+  await collectCommitChanges(raw);
+  assert.deepEqual(resultOf(raw)[0].files[0].diff.length > 0, true);
 });
 
 test('odd file names and non-UTF-8 / CRLF content are saved byte for byte', async () => {

@@ -23,5 +23,6 @@
   "Delete {0} cached repository clone(s)? They will be downloaded again on the next run.": "캐시된 저장소 복제본 {0}개를 삭제할까요? 다음 실행 시 다시 다운로드됩니다.",
   "Repository cache cleared.": "저장소 캐시를 삭제했습니다.",
   "Select a folder to save the results in": "결과를 저장할 폴더 선택",
-  "Save Here": "여기에 저장"
+  "Save Here": "여기에 저장",
+  "{0} commits matched, but none of them changed source code (only comments, blank lines or other files).": "조건에 맞는 커밋 {0}개를 찾았지만, 소스 코드를 바꾼 커밋은 없습니다(주석·빈 줄·기타 파일만 변경)."
 }

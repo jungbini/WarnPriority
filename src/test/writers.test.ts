@@ -20,21 +20,21 @@ const commit: CommitRecord = {
       newPath: 'a.c',
       status: 'modified',
       changes: [
-        { type: 'modified', oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, deletedCode: ['x = 1;'], addedCode: ['x = 2;', 'y = 3;'] },
-        { type: 'added', oldStart: 5, oldLines: 0, newStart: 7, newLines: 1, deletedCode: [], addedCode: ['z();'] },
+        { type: 'modified', oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, deletedCode: ['x = 1;'], addedCode: ['x = 2;', 'y = 3;'], deletedLineNumbers: [1], addedLineNumbers: [1, 2] },
+        { type: 'added', oldStart: 5, oldLines: 0, newStart: 7, newLines: 1, deletedCode: [], addedCode: ['z();'], deletedLineNumbers: [], addedLineNumbers: [7] },
       ],
     },
     {
       oldPath: 'gone.c',
       newPath: null,
       status: 'deleted',
-      changes: [{ type: 'deleted', oldStart: 1, oldLines: 1, newStart: 0, newLines: 0, deletedCode: ['bye'], addedCode: [] }],
+      changes: [{ type: 'deleted', oldStart: 1, oldLines: 1, newStart: 0, newLines: 0, deletedCode: ['bye'], addedCode: [], deletedLineNumbers: [1], addedLineNumbers: [] }],
     },
     {
       oldPath: 'old/name.c',
       newPath: 'new/name.c',
       status: 'renamed',
-      changes: [{ type: 'modified', oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, deletedCode: ['a'], addedCode: ['b'] }],
+      changes: [{ type: 'modified', oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, deletedCode: ['a'], addedCode: ['b'], deletedLineNumbers: [1], addedLineNumbers: [1] }],
     },
   ],
 };
