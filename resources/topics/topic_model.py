@@ -109,6 +109,17 @@ LANGUAGE_STOPWORDS: Dict[str, str] = {
         puts""",
 }
 
+# English function words (as in scikit-learn's list), for comments and names like assertThat / isEmpty.
+ENGLISH_STOPWORDS = set("""
+a about above after again against all also am an and any are as at be because been before being below between both
+but by can could did do does doing down during each either else ever every few for from further had has have having
+he her here hers herself him himself his how however if in into is it its itself just may me might more most must
+my myself neither no nor not now of off often on once only or other our ours ourselves out over own same shall she
+should so some such than that the their theirs them themselves then there these they this those though through thus
+to too under until up upon us very was we were what when where whether which while who whom whose why will with
+within without would yet you your yours yourself yourselves
+""".split())
+
 EXTENSION_LANGUAGE = {
     'java': 'java', 'kt': 'kotlin', 'kts': 'kotlin', 'scala': 'scala', 'groovy': 'groovy',
     'c': 'c', 'h': 'c', 'cc': 'c', 'cpp': 'c', 'cxx': 'c', 'hh': 'c', 'hpp': 'c', 'hxx': 'c', 'm': 'c', 'mm': 'c',
@@ -123,8 +134,9 @@ def language_of(path: str) -> Optional[str]:
 
 
 def code_stopwords(languages: Iterable[str], extra: Iterable[str] = ()) -> List[str]:
-    """Common code tokens + the keywords of the given languages + extra words, split like identifiers."""
-    words = set(COMMON_STOPWORDS)
+    """Common code tokens + English stop words (comments, assertThat, isEmpty) + the keywords of the
+    given languages + extra words, split like identifiers."""
+    words = set(COMMON_STOPWORDS) | ENGLISH_STOPWORDS
     for lang in languages:
         words.update(LANGUAGE_STOPWORDS.get(lang, '').split())
     words.update(w for w in extra if w)
@@ -145,6 +157,12 @@ def split_identifiers(text: str) -> str:
 # --------------------------------------------------------------------------
 
 LICENSE_WORDS = re.compile(r'licen[cs]e|copyright|\(c\)', re.IGNORECASE)
+
+# Import / package / include declarations: they say what a file uses, not what its code does,
+# and as separate chunks they would form an artificial "imports" topic.
+DECLARATION_LINE = re.compile(
+    r'^\s*(package\s|import\s|using\s+[\w.]+\s*;|#\s*(include|import)\b|from\s+[\w.]+\s+import\s|'
+    r'use\s+[\w:\\{}, ]+;|require(_relative)?[\s(]|extern\s+crate\s)')
 
 
 def strip_license_header(lines: List[str]) -> List[str]:
@@ -172,12 +190,16 @@ def strip_license_header(lines: List[str]) -> List[str]:
     return [''] * end + lines[end:]
 
 
-def chunk_code(text: str, max_lines: int) -> List[Tuple[str, int]]:
-    """Splits code into chunks of at most `max_lines` non-blank lines, cut at blank lines where possible.
+def chunk_code(text: str, min_lines: int, max_lines: int) -> List[Tuple[str, int]]:
+    """Splits code into chunks along blank lines: usually one method (with its doc comment) per chunk.
 
+    Blocks shorter than `min_lines` are merged with the following ones, blocks longer than
+    `max_lines` are cut. Boundaries depend only on nearby blocks, so the unchanged parts of two
+    versions of a file give identical chunks (which are then embedded only once).
     Returns (chunk text, number of non-blank lines) pairs.
     """
     lines = strip_license_header(text.replace('\r\n', '\n').replace('\r', '\n').split('\n'))
+    lines = ['' if DECLARATION_LINE.match(line) else line for line in lines]
     blocks: List[List[str]] = []
     current: List[str] = []
     for line in lines:
@@ -188,23 +210,21 @@ def chunk_code(text: str, max_lines: int) -> List[Tuple[str, int]]:
             current = []
     if current:
         blocks.append(current)
+    pieces = [block[k:k + max_lines] for block in blocks for k in range(0, len(block), max_lines)]
 
-    # A block longer than max_lines is cut into pieces.
-    pieces: List[List[str]] = []
-    for block in blocks:
-        for k in range(0, len(block), max_lines):
-            pieces.append(block[k:k + max_lines])
-
-    chunks: List[Tuple[str, int]] = []
+    chunks: List[List[str]] = []
     buf: List[str] = []
     for piece in pieces:
-        if buf and len(buf) + len(piece) > max_lines:
-            chunks.append(('\n'.join(buf), len(buf)))
-            buf = []
         buf.extend(piece)
+        if len(buf) >= min_lines:
+            chunks.append(buf)
+            buf = []
     if buf:
-        chunks.append(('\n'.join(buf), len(buf)))
-    return chunks
+        if chunks and len(chunks[-1]) + len(buf) <= max_lines:
+            chunks[-1].extend(buf)  # a short tail (e.g. closing braces) joins the previous chunk
+        else:
+            chunks.append(buf)
+    return [('\n'.join(c), len(c)) for c in chunks]
 
 
 # --------------------------------------------------------------------------
@@ -249,6 +269,19 @@ def write_topics_csv(path: str, file_names: Sequence[str], shares: Sequence[Dict
             w.writerow([name] + [f'{s.get(t, 0.0):.1f}%' for t in topic_ids])
 
 
+def auto_min_topic_size(distinct_chunks: int) -> int:
+    """About 1% of the distinct chunks (at least 10): keeps K readable as the amount of code grows."""
+    return max(10, round(distinct_chunks / 100))
+
+
+def save_cache(path: str, vectors: Dict[str, object]) -> None:
+    import numpy as np
+
+    tmp = path + '.tmp.npz'
+    np.savez(tmp, keys=np.array(list(vectors.keys())), embeddings=np.vstack(list(vectors.values())))
+    os.replace(tmp, path)
+
+
 def progress(stage: str, **fields) -> None:
     print('PROGRESS ' + json.dumps({'stage': stage, **fields}), flush=True)
 
@@ -264,8 +297,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument('result', help='result JSON written by WarnPriority')
     p.add_argument('--out', help='output CSV (default: <result>.topics.csv)')
     p.add_argument('--model', default='nomic-ai/CodeRankEmbed', help='sentence-transformers embedding model')
-    p.add_argument('--min-topic-size', type=int, default=10, help='smallest topic, in code chunks (HDBSCAN min_cluster_size)')
-    p.add_argument('--max-chunk-lines', type=int, default=60, help='code lines per chunk')
+    p.add_argument('--min-topic-size', type=int, default=0,
+                   help='smallest topic, in code chunks (HDBSCAN min_cluster_size); 0 = automatic: 1%% of the distinct chunks, at least 10')
+    p.add_argument('--min-chunk-lines', type=int, default=10, help='blocks shorter than this are merged with the next')
+    p.add_argument('--max-chunk-lines', type=int, default=60, help='longer blocks are cut into pieces of this size')
+    p.add_argument('--cache-dir', help='embedding cache (default: .topic-embeddings next to the result file)')
     p.add_argument('--max-seq-length', type=int, default=1024, help='tokens per chunk seen by the model')
     p.add_argument('--keywords', type=int, default=5, help='keywords shown in each topic column header')
     p.add_argument('--extra-stopwords', default='', help='comma-separated words to leave out of the keywords')
@@ -273,6 +309,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument('--device', default=None, help='cpu, cuda, mps (default: automatic)')
     p.add_argument('--seed', type=int, default=42, help='UMAP random state, for reproducible topics')
     p.add_argument('--keep-outliers', action='store_true', help='keep chunks HDBSCAN marks as outliers in an "Outliers" column')
+    p.add_argument('--nr-topics', default='none', help='"none": the topics HDBSCAN finds (default); "auto": also merge similar topics; or a number')
     args = p.parse_args(argv)
 
     result_file = os.path.abspath(args.result)
@@ -293,7 +330,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     for i, (_, path) in enumerate(files):
         with open(path, encoding='utf-8', errors='replace') as f:
             text = f.read()
-        for chunk, n in chunk_code(text, args.max_chunk_lines):
+        for chunk, n in chunk_code(text, args.min_chunk_lines, args.max_chunk_lines):
             key = hashlib.sha1(chunk.encode('utf-8')).hexdigest()
             unique.setdefault(key, chunk)
             chunk_files.append(i)
@@ -302,30 +339,51 @@ def main(argv: Optional[List[str]] = None) -> int:
     docs = list(unique.values())
     keys = list(unique.keys())
     log(f'{len(files)} before files, {len(chunk_keys)} chunks, {len(docs)} distinct chunks')
-    if len(docs) < max(20, 2 * args.min_topic_size):
+    min_topic_size = args.min_topic_size if args.min_topic_size > 0 else auto_min_topic_size(len(docs))
+    log(f'Minimum topic size: {min_topic_size} chunks' + ('' if args.min_topic_size > 0 else ' (automatic)'))
+    if len(docs) < max(20, 2 * min_topic_size):
         raise SystemExit(f'Only {len(docs)} distinct code chunks: too few for topic modeling (collect more commits).')
 
-    # 3. Embeddings -----------------------------------------------------------
+    # 3. Embeddings (cached per chunk hash, model and sequence length) ---------
     import numpy as np
-    from sentence_transformers import SentenceTransformer
 
-    progress('model', model=args.model)
-    model = SentenceTransformer(args.model, trust_remote_code=True, device=args.device)
-    model.max_seq_length = args.max_seq_length
-    if model.device.type == 'cuda':
-        model.half()  # fp16 roughly halves embedding time on GPUs; CPUs stay in fp32
-    log(f'Embedding model {args.model} on {model.device}')
-    embeddings = []
-    step = max(args.batch_size * 8, 64)
-    for start in range(0, len(docs), step):
-        progress('embed', done=start, total=len(docs))
-        embeddings.append(model.encode(docs[start:start + step], batch_size=args.batch_size,
-                                       convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False))
-    embeddings = np.vstack(embeddings)
-    progress('embed', done=len(docs), total=len(docs))
+    cache_dir = args.cache_dir or os.path.join(os.path.dirname(result_file), '.topic-embeddings')
+    cache_file = os.path.join(cache_dir, re.sub(r'[^A-Za-z0-9._-]+', '_', f'{args.model}-{args.max_seq_length}') + '.npz')
+    cached: Dict[str, 'np.ndarray'] = {}
+    if os.path.isfile(cache_file):
+        with np.load(cache_file) as z:
+            cached = dict(zip(z['keys'].tolist(), z['embeddings']))
+    missing = [i for i, k in enumerate(keys) if k not in cached]
+    log(f'{len(docs) - len(missing)} chunk embeddings cached, {len(missing)} to compute')
+
+    if missing:
+        from sentence_transformers import SentenceTransformer
+
+        progress('model', model=args.model)
+        model = SentenceTransformer(args.model, trust_remote_code=True, device=args.device)
+        model.max_seq_length = args.max_seq_length
+        if model.device.type == 'cuda':
+            model.half()  # fp16 roughly halves embedding time on GPUs; CPUs stay in fp32
+        log(f'Embedding model {args.model} on {model.device}')
+        step = max(args.batch_size * 8, 64)
+        os.makedirs(cache_dir, exist_ok=True)
+        for start in range(0, len(missing), step):
+            progress('embed', done=start, total=len(missing))
+            batch = missing[start:start + step]
+            vectors = model.encode([docs[i] for i in batch], batch_size=args.batch_size,
+                                   convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
+            for i, v in zip(batch, vectors):
+                cached[keys[i]] = v.astype(np.float32)
+            if (start // step) % 10 == 9:
+                save_cache(cache_file, cached)  # keep work done so far if the run is cancelled
+        save_cache(cache_file, cached)
+        progress('embed', done=len(missing), total=len(missing))
+    embeddings = np.vstack([cached[k] for k in keys])
 
     # 4-5. Topics ---------------------------------------------------------------
     progress('topics')
+    import logging
+    logging.getLogger('BERTopic').setLevel(logging.ERROR)
     from bertopic import BERTopic
     from bertopic.vectorizers import ClassTfidfTransformer
     from hdbscan import HDBSCAN
@@ -334,23 +392,28 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     languages = {language_of(path) for _, path in files} - {None}
     stopwords = code_stopwords(languages, [w.strip() for w in args.extra_stopwords.split(',')])
-    vectorizer = CountVectorizer(preprocessor=split_identifiers, token_pattern=r'(?u)\b[a-z]{2,}\b', stop_words=stopwords)
+    # BERTopic strips punctuation before c-TF-IDF without inserting spaces (json.map.put -> jsonmapput),
+    # so it gets the code with identifiers already split into words; the embeddings use the real code.
+    words = [split_identifiers(d) for d in docs]
+    vectorizer = CountVectorizer(token_pattern=r'(?u)\b[a-z]{2,}\b', stop_words=stopwords)
     ctfidf = ClassTfidfTransformer(reduce_frequent_words=True)
     topic_model = BERTopic(
         umap_model=UMAP(n_neighbors=15, n_components=5, min_dist=0.0, metric='cosine', random_state=args.seed),
-        hdbscan_model=HDBSCAN(min_cluster_size=args.min_topic_size, metric='euclidean', cluster_selection_method='eom', prediction_data=True),
+        hdbscan_model=HDBSCAN(min_cluster_size=min_topic_size, metric='euclidean', cluster_selection_method='eom', prediction_data=True),
         vectorizer_model=vectorizer,
         ctfidf_model=ctfidf,
         top_n_words=10,
+        nr_topics=None if args.nr_topics == 'none' else ('auto' if args.nr_topics == 'auto' else int(args.nr_topics)),
     )
-    topics, _ = topic_model.fit_transform(docs, embeddings)
+    logging.getLogger('BERTopic').setLevel(logging.ERROR)  # BERTopic resets its logger level on construction
+    topics, _ = topic_model.fit_transform(words, embeddings)
     found = sorted(set(topics) - {-1})
     if not found:
         raise SystemExit('BERTopic found no topics (every chunk is an outlier). Try a smaller --min-topic-size.')
     outliers = sum(1 for t in topics if t == -1)
     if outliers and not args.keep_outliers:
-        topics = topic_model.reduce_outliers(docs, topics, strategy='embeddings', embeddings=embeddings)
-        topic_model.update_topics(docs, topics=topics, vectorizer_model=vectorizer, ctfidf_model=ctfidf)
+        topics = topic_model.reduce_outliers(words, topics, strategy='embeddings', embeddings=embeddings)
+        topic_model.update_topics(words, topics=topics, vectorizer_model=vectorizer, ctfidf_model=ctfidf)
     log(f'{len(found)} topics; {outliers} outlier chunks ' + ('kept' if args.keep_outliers else 'assigned to their nearest topic'))
 
     # 6. Per-file shares and output ---------------------------------------------

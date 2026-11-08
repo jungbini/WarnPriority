@@ -161,7 +161,48 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
   예: PMD 권장 세트 `rulesets/java/quickstart.xml`, 카테고리 `category/java/errorprone.xml,category/java/bestpractices.xml`, 또는 직접 만든 XML.
 - 설정 문제로 PMD가 실행하지 못한 규칙이 있으면 나머지 규칙으로 분석을 계속하고, 그 사실을 알림과 출력 창 로그에 남깁니다.
 
-## 설정
+## 수정 전 코드 토픽 모델링 (BERTopic)
+
+수집한 커밋들의 **수정 전(before) 소스 코드 전체**를 토픽 모델링해서, 파일마다 어떤 기능(토픽)의 코드가 몇 %인지 정리합니다.
+
+1. 명령 팔레트에서 **`WarnPriority: 수정 전 코드 토픽 모델링 (BERTopic)`**을 실행하거나, 탐색기에서 결과 JSON을 우클릭합니다.
+2. 처음 한 번은 WarnPriority 전용 Python 환경을 만들어 BERTopic·sentence-transformers·PyTorch(약 1~4 GB)를 설치할지 묻습니다(Python 3.9 이상 필요).
+   이미 준비된 Python이 있으면 `warnPriority.topics.pythonPath`에 지정합니다(`pip install -r resources/topics/requirements.txt`).
+3. 임베딩 모델 [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)(약 550 MB)는 처음 실행할 때 Hugging Face에서 내려받습니다.
+4. 결과는 수집 결과 옆에 저장되고 바로 열립니다.
+
+**`<결과>.topics.csv`** — 파일별 토픽 비율(%). 토픽 수 K는 자동으로 정해지고, 열 제목의 괄호 안은 토픽의 대표 키워드입니다.
+
+google/gson `fix, bug` 중 최근 60개 커밋(수정 전 파일 373개)에 실행한 실제 결과입니다(토픽 23개):
+
+```
+File Name,Topic #1 (reader, begin, malformed, column, writer),Topic #2 (peeked, stack, pos, strictness, quoted),Topic #3 (filter, access, reflection, constructor, accessible),...,Topic #23 (delegating, part, gadget, delayed, factory)
+094f5003ce5f6d2fb65457bee9c78b9d53d25308/before/gson/src/main/java/com/google/gson/Gson.java,0.9%,62.1%,0.0%,...,0.0%
+…
+```
+
+**`<결과>.topic-keywords.csv`** — 토픽별 상위 키워드(c-TF-IDF 점수), 코드 조각 수, 코드 줄 수.
+
+### 처리 과정
+
+1. **파일**: 결과 JSON에 있는 모든 커밋의 `before/` 파일(이름이 바뀐 파일은 옛 경로, 새로 추가된 파일은 제외). `File Name`은 결과 폴더 기준 경로(`<커밋>/before/<파일>`)입니다.
+2. **코드 조각**: 한 파일에는 여러 기능이 있고 긴 파일은 모델 입력 길이를 넘으므로, 파일을 빈 줄 기준 블록(보통 메서드 하나 + 주석)으로 나눕니다.
+   10줄 미만 블록은 다음 블록과 합치고 60줄을 넘는 블록은 자릅니다. 라이선스 머리말과 `import`/`package`/`#include` 줄은 뺍니다(기능이 아니라 의존성이고, 따로 모이면 "import 토픽"이 생기므로).
+   같은 파일의 여러 버전에서 바뀌지 않은 조각은 똑같으므로, **같은 조각은 한 번만** 임베딩·클러스터링합니다(자주 바뀐 파일이 토픽을 독차지하지 않도록).
+3. **임베딩**: CodeRankEmbed로 조각마다 768차원 벡터를 만듭니다. 결과 폴더의 `.topic-embeddings/`에 캐시되어, 다시 실행하거나 커밋을 더 모은 뒤 실행하면 새 조각만 계산합니다.
+4. **토픽**: BERTopic(UMAP + HDBSCAN)이 토픽 수 K를 자동으로 정합니다. 토픽의 최소 크기는 기본으로 서로 다른 코드 조각 수의 약 1%(최소 10)라서,
+   저장소 크기와 관계없이 K가 수십 개 이내로 유지됩니다(위 예: 조각 3,239개 → 최소 32 → 토픽 23개. 최소 10이면 토픽 101개).
+   어느 토픽에도 속하지 않은 조각(outlier)은 가장 가까운 토픽에 넣습니다.
+5. **키워드(c-TF-IDF)**: 식별자를 단어로 나눈 뒤(`getUserName` → get, user, name) **코드 stopword**를 빼고 계산합니다.
+   stopword = 공통 토큰(`return`, `self`, `null`, `get`, `value`, 라이선스 문구 등) + 결과에 있는 언어들의 예약어(Java·Kotlin·Python·JS/TS·C/C++·C#·Go·Rust·Swift·PHP·Ruby 등)
+   + 영어 기능어(`that`, `is`, `the` — 주석과 `assertThat`·`isEmpty` 같은 이름에서 나옴). 더 뺄 단어는 `warnPriority.topics.extraStopwords`에 넣습니다.
+6. **파일별 비율**: 파일의 코드 줄 중 각 토픽에 속한 조각의 줄 비율입니다(합계 100%).
+
+### 걸리는 시간
+임베딩 계산량은 코드 양에 비례합니다. **GPU(CUDA)나 Apple Silicon(MPS)이 있으면 자동으로 사용**하며 몇 분이면 끝납니다.
+CPU만 쓰면 오래 걸립니다(4코어 CPU 기준 google/gson `fix, bug` 일부 60개 커밋·수정 전 파일 373개: 약 16분, 전체 380개 커밋: 약 1시간).
+진행 상황은 알림에 표시되고 언제든 취소할 수 있으며, 그때까지 계산한 임베딩은 캐시에 남아 다음 실행에 이어서 씁니다.
+
 
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
@@ -175,6 +216,10 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | `warnPriority.pmd.ruleset` | `all` | 실행할 PMD 규칙. `all`: Java 규칙 전부. 또는 세트·카테고리·XML 경로(쉼표 구분) |
 | `warnPriority.pmd.home` | `""` | 이미 설치한 PMD 7 폴더(`lib/` 포함). 비우면 자동으로 내려받은 PMD 사용 |
 | `warnPriority.pmd.java` | `""` | PMD를 실행할 Java 실행 파일 |
+| `warnPriority.topics.pythonPath` | `""` | 토픽 모델링용 Python. 비우면 전용 환경을 만들어 사용 |
+| `warnPriority.topics.model` | `nomic-ai/CodeRankEmbed` | 임베딩 모델 |
+| `warnPriority.topics.minTopicSize` | `0` (자동) | 토픽 최소 크기(코드 조각 수). `0`: 서로 다른 조각 수의 약 1%. 크게 하면 토픽 수 K가 줄어듦 |
+| `warnPriority.topics.extraStopwords` | `[]` | 토픽 키워드에서 추가로 뺄 단어 |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
 
 
@@ -231,6 +276,14 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   ```
 
   옵션: `--ruleset <규칙>`, `--pmd-home <PMD 폴더>`, `--java <java 경로>`
+- 토픽 모델링도 CLI로 실행할 수 있습니다(Python에 `resources/topics/requirements.txt` 설치 필요):
+
+  ```bash
+  npm run collect -- topics results/google_gson/google_gson_fix-bug_20261107-104155.json --python python3
+  ```
+
+  옵션: `--python <경로>`, `--model <모델>`, `--min-topic-size N`, `--extra-stopwords a,b`.
+  스크립트를 직접 쓸 수도 있습니다: `python resources/topics/topic_model.py <result.json> --help`
 - 실제 PMD로 도는 테스트까지 실행하려면: `WARNPRIORITY_PMD_HOME=<PMD 폴더> npm test` (없으면 그 테스트만 건너뜀)
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 - 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,
@@ -256,7 +309,9 @@ src/
    ├─ pmdRunner.ts     PMD 실행, JSON 리포트 읽기 (ruleset "all" → resources/pmd/all-java-rules.xml)
    ├─ warningDiff.ts   커밋 전후 warning 대응(분석기와 무관)
    ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json
+   ├─ topics.ts        토픽 모델링 스크립트 실행, 전용 Python 환경 준비
    ├─ collector.ts     전체 파이프라인
    └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)
+resources/topics/       topic_model.py(BERTopic 파이프라인), requirements.txt
 l10n/, package.nls*.json   영어/한국어 UI 문자열 (VS Code 표시 언어에 따라 자동 선택)
 ```

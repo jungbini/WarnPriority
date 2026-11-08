@@ -26,6 +26,12 @@ class Stopwords(unittest.TestCase):
         self.assertNotIn('fn', words, 'Rust keyword only when Rust files are present')
         self.assertIn('fn', tm.code_stopwords(['rust']))
 
+    def test_english_function_words(self):
+        words = set(tm.code_stopwords([]))
+        for w in ['that', 'is', 'to', 'the']:
+            self.assertIn(w, words)
+        self.assertNotIn('json', words)
+
     def test_extra_words_are_split_like_code(self):
         words = tm.code_stopwords([], ['myHelper', ''])
         self.assertIn('my', words)
@@ -52,20 +58,41 @@ class LicenseHeader(unittest.TestCase):
 
 
 class Chunking(unittest.TestCase):
-    def test_blocks_merge_up_to_max_lines_at_blank_lines(self):
-        text = '\n'.join(['a1', 'a2', '', 'b1', 'b2', 'b3', '', '', 'c1'])
-        self.assertEqual(tm.chunk_code(text, 5), [('a1\na2\nb1\nb2\nb3', 5), ('c1', 1)])
+    def test_blocks_become_chunks_and_small_blocks_merge(self):
+        text = '\n'.join(['a1', 'a2', '', 'b1', 'b2', 'b3', '', '', 'c1', 'c2', 'c3', 'c4', 'c5', '', 'd1'])
+        # a (2 lines) + b (3) reach 5 lines; c (5) is a chunk; the short tail d joins it.
+        self.assertEqual(tm.chunk_code(text, 5, 60), [('a1\na2\nb1\nb2\nb3', 5), ('c1\nc2\nc3\nc4\nc5\nd1', 6)])
 
     def test_long_block_is_cut(self):
         text = '\n'.join(f'l{i}' for i in range(7))
-        self.assertEqual([n for _, n in tm.chunk_code(text, 3)], [3, 3, 1])
+        self.assertEqual([n for _, n in tm.chunk_code(text, 1, 3)], [3, 3, 1])
+
+    def test_unchanged_methods_give_identical_chunks_across_versions(self):
+        method = lambda name: [f'void {name}() {{'] + [f'  step{i}();' for i in range(10)] + ['}', '']
+        chunks = lambda lines: {c for c, _ in tm.chunk_code('\n'.join(lines), 10, 60)}
+        v1 = chunks(method('a') + method('b') + method('c'))
+        # A line edited inside a(): b() and c() are the same chunks as before.
+        edited = method('a')
+        edited[3] = '  changed();'
+        v2 = chunks(edited + method('b') + method('c'))
+        self.assertEqual(len(v1 & v2), 2)
+        # A small block inserted before b(): only the chunk it merges into (b) changes; c() is untouched.
+        v3 = chunks(method('a') + ['  // new comment', ''] + method('b') + method('c'))
+        self.assertEqual({c for c in v1 if 'void c' in c or 'void a' in c}, {c for c in v1 & v3})
 
     def test_license_and_crlf(self):
         text = '/*\r\n * Licensed under MIT\r\n */\r\nclass A {\r\n}\r\n'
-        self.assertEqual(tm.chunk_code(text, 60), [('class A {\n}', 2)])
+        self.assertEqual(tm.chunk_code(text, 10, 60), [('class A {\n}', 2)])
+
+    def test_import_and_package_lines_are_dropped(self):
+        java = 'package a.b;\n\nimport java.util.List;\nimport static x.Y.z;\n\nclass A {\n  int f() { return 1; }\n}\n'
+        self.assertEqual(tm.chunk_code(java, 10, 60), [('class A {\n  int f() { return 1; }\n}', 3)])
+        py = 'import os\nfrom a.b import c\n\ndef f():\n    return os.sep\n'
+        self.assertEqual(tm.chunk_code(py, 10, 60), [('def f():\n    return os.sep', 2)])
+        self.assertEqual(tm.chunk_code('#include <stdio.h>\nusing System;\nint important = 1;', 10, 60), [('int important = 1;', 1)])
 
     def test_empty(self):
-        self.assertEqual(tm.chunk_code('\n\n', 10), [])
+        self.assertEqual(tm.chunk_code('\n\n', 10, 60), [])
 
 
 class Aggregation(unittest.TestCase):
@@ -74,6 +101,11 @@ class Aggregation(unittest.TestCase):
         self.assertEqual(shares[0], {2: 90.0, 0: 10.0})
         self.assertEqual(shares[1], {1: 100.0})
         self.assertEqual(shares[2], {})
+
+    def test_auto_min_topic_size(self):
+        self.assertEqual(tm.auto_min_topic_size(300), 10)
+        self.assertEqual(tm.auto_min_topic_size(3239), 32)
+        self.assertEqual(tm.auto_min_topic_size(11749), 117)
 
     def test_csv_format(self):
         with tempfile.TemporaryDirectory() as d:

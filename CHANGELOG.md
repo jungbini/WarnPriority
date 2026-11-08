@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0
+
+- **수정 전 코드 토픽 모델링(BERTopic)**: `WarnPriority: 수정 전 코드 토픽 모델링 (BERTopic)` 명령(탐색기 우클릭, CLI `topics`).
+  결과 JSON의 모든 `before/` 파일을 함수 단위 코드 조각으로 나눠 CodeRankEmbed로 임베딩하고, BERTopic(UMAP + HDBSCAN)으로 토픽 수 K를 자동 결정,
+  코드 stopword(공통 토큰 + 언어별 예약어 + 영어 기능어)를 뺀 c-TF-IDF로 키워드를 뽑아
+  `<결과>.topics.csv`(File Name, Topic #1 (키워드), …, Topic #K — 파일별 토픽 비율 %)와 `<결과>.topic-keywords.csv`로 저장
+- 같은 코드 조각은 한 번만 임베딩하고, 임베딩은 결과 폴더의 `.topic-embeddings/`에 캐시(다시 실행하면 새 조각만 계산)
+- 처음 사용할 때 동의를 받고 전용 Python 환경을 만들어 패키지 설치(`resources/topics/requirements.txt`), 또는 `warnPriority.topics.pythonPath` 사용.
+  설정: `warnPriority.topics.pythonPath`, `.model`, `.minTopicSize`(기본 자동: 서로 다른 조각 수의 약 1%), `.extraStopwords`
+
 ## 0.8.0
 
 - PMD 규칙 기본값을 **모든 Java 규칙**으로 변경: `warnPriority.pmd.ruleset` 기본값 `all` =

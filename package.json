@@ -154,8 +154,8 @@
         },
         "warnPriority.topics.minTopicSize": {
           "type": "integer",
-          "default": 10,
-          "minimum": 2,
+          "default": 0,
+          "minimum": 0,
           "markdownDescription": "%config.topics.minTopicSize%"
         },
         "warnPriority.topics.extraStopwords": {

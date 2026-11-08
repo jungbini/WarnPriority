@@ -571,7 +571,7 @@ async function runTopicsCommand(context: vscode.ExtensionContext, output: vscode
             python,
             resultFile,
             model: config.get<string>('topics.model', DEFAULT_EMBEDDING_MODEL).trim() || DEFAULT_EMBEDDING_MODEL,
-            minTopicSize: config.get<number>('topics.minTopicSize', 10),
+            minTopicSize: config.get<number>('topics.minTopicSize', 0),
             extraStopwords: config.get<string[]>('topics.extraStopwords', []),
             signal: controller.signal,
             log: (l) => output.appendLine(l),

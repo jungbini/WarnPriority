@@ -17,6 +17,6 @@
   "command.topicModel.title": "수정 전 코드 토픽 모델링 (BERTopic)",
   "config.topics.pythonPath": "토픽 모델링에 사용할 Python(`bertopic`, `sentence-transformers`, `einops` 설치됨)입니다. 비워 두면 처음 실행할 때 WarnPriority 전용 Python 환경을 만듭니다(Python 3.9 이상 필요).",
   "config.topics.model": "토픽 모델링용 임베딩 모델(Hugging Face의 sentence-transformers 모델)입니다. 기본값: `nomic-ai/CodeRankEmbed`.",
-  "config.topics.minTopicSize": "토픽 하나의 최소 크기(코드 조각 수, HDBSCAN `min_cluster_size`)입니다. 크게 하면 더 적고 넓은 토픽이 나옵니다. 토픽 수는 자동으로 정해집니다.",
+  "config.topics.minTopicSize": "토픽 하나의 최소 크기(코드 조각 수, HDBSCAN `min_cluster_size`)이며, 토픽 수 K는 이 값에 따라 자동으로 정해집니다. `0`(기본값): 서로 다른 코드 조각 수의 약 1%(최소 10)로 정해, 저장소 크기와 관계없이 K가 읽기 좋은 수준으로 유지됩니다. 크게 하면 더 적고 넓은 토픽이 나옵니다.",
   "config.topics.extraStopwords": "기본 코드 stopword(언어 예약어, `return`·`self`·`null` 같은 공통 토큰)에 더해 토픽 키워드에서 뺄 단어입니다."
 }
