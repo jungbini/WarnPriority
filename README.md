@@ -208,27 +208,32 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 4. 결과는 수집 결과 옆에 저장되고 바로 열립니다.
 
 **`<결과>.topics.csv`** — 파일별 토픽 비율(%). 토픽 수 K는 자동으로 정해지고, 열 제목의 괄호 안은 토픽의 대표 키워드입니다.
+어느 토픽에도 속하지 않은 코드는 **마지막 `Unclassified`(미분류) 열**에 들어갑니다(그런 코드가 있을 때만). 한 행의 합은 100%입니다.
 
-google/gson `fix, bug` 중 최근 60개 커밋(수정 전 파일 373개)에 실행한 실제 결과입니다(토픽 23개):
+google/gson `fix, bug` 전체 380개 커밋에서 테스트 파일을 뺀 수정 전 파일 844개에 실행한 실제 결과입니다(토픽 20개 + 미분류):
 
 ```
-File Name,Topic #1 (reader, begin, malformed, column, writer),Topic #2 (peeked, stack, pos, strictness, quoted),Topic #3 (filter, access, reflection, constructor, accessible),...,Topic #23 (delegating, part, gadget, delayed, factory)
-094f5003ce5f6d2fb65457bee9c78b9d53d25308/before/gson/src/main/java/com/google/gson/Gson.java,0.9%,62.1%,0.0%,...,0.0%
+File Name,Topic #1 (peeked, jj, pos, stack, cur),Topic #2 (variable, resolve, owner, arguments, wildcard),Topic #3 (convenience, elements, element, primitive, member),...,Topic #20 (instead, desired, specified, deserializes, generic),Unclassified
+094f5003ce5f6d2fb65457bee9c78b9d53d25308/before/gson/src/main/java/com/google/gson/Gson.java,11.5%,0.0%,0.0%,...,15.0%,37.1%
 …
 ```
 
-**`<결과>.topic-keywords.csv`** — 토픽별 상위 키워드(c-TF-IDF 점수), 코드 조각 수, 코드 줄 수.
+**`<결과>.topic-keywords.csv`** — 토픽별 상위 키워드(c-TF-IDF 점수), 코드 조각 수, 코드 줄 수. 마지막 행은 `Unclassified`입니다.
 
 ### 처리 과정
 
 1. **파일**: 결과 JSON에 있는 모든 커밋의 `before/` 파일(이름이 바뀐 파일은 옛 경로, 새로 추가된 파일은 제외). `File Name`은 결과 폴더 기준 경로(`<커밋>/before/<파일>`)입니다.
+   **테스트 파일은 기본으로 뺍니다**(`warnPriority.topics.excludeTestFiles`). 테스트 폴더(`test/`, `tests/`, `__tests__/`, `spec/`, `androidTest/` 등)에 있거나
+   테스트 이름 규칙을 따르는 파일(`*Test.java`, `*Tests.cs`, `*IT.java`, `test_*.py`, `*_test.go`, `*.spec.ts`, `*_spec.rb` 등)이 해당합니다.
+   테스트를 넣으면 테스트 예제 데이터(`bag`, `truck`, `sandwiches` 같은 이름)가 따로 토픽을 이룹니다.
 2. **코드 조각**: 한 파일에는 여러 기능이 있고 긴 파일은 모델 입력 길이를 넘으므로, 파일을 빈 줄 기준 블록(보통 메서드 하나 + 주석)으로 나눕니다.
    10줄 미만 블록은 다음 블록과 합치고 60줄을 넘는 블록은 자릅니다. 라이선스 머리말과 `import`/`package`/`#include` 줄은 뺍니다(기능이 아니라 의존성이고, 따로 모이면 "import 토픽"이 생기므로).
    같은 파일의 여러 버전에서 바뀌지 않은 조각은 똑같으므로, **같은 조각은 한 번만** 임베딩·클러스터링합니다(자주 바뀐 파일이 토픽을 독차지하지 않도록).
 3. **임베딩**: CodeRankEmbed로 조각마다 768차원 벡터를 만듭니다. 결과 폴더의 `.topic-embeddings/`에 캐시되어, 다시 실행하거나 커밋을 더 모은 뒤 실행하면 새 조각만 계산합니다.
 4. **토픽**: BERTopic(UMAP + HDBSCAN)이 토픽 수 K를 자동으로 정합니다. 토픽의 최소 크기는 기본으로 서로 다른 코드 조각 수의 약 1%(최소 10)라서,
-   저장소 크기와 관계없이 K가 수십 개 이내로 유지됩니다(위 예: 조각 3,239개 → 최소 32 → 토픽 23개. 최소 10이면 토픽 101개).
-   어느 토픽에도 속하지 않은 조각(outlier)은 가장 가까운 토픽에 넣습니다.
+   저장소 크기와 관계없이 K가 수십 개 이내로 유지됩니다(위 예: 조각 5,280개 → 최소 53 → 토픽 20개. 같은 데이터에서 최소를 10으로 하면 토픽 194개).
+   HDBSCAN이 어느 토픽에도 넣지 않은 조각(outlier)은 **`Unclassified`**로 따로 셉니다(위 예: 서로 다른 조각의 15%).
+   미분류가 많으면 `warnPriority.topics.minTopicSize`를 줄여 보세요. 미분류 없이 모두 가장 가까운 토픽에 넣으려면 스크립트에 `--assign-outliers`를 줍니다.
 5. **키워드(c-TF-IDF)**: 식별자를 단어로 나눈 뒤(`getUserName` → get, user, name) **코드 stopword**를 빼고 계산합니다.
    stopword = 공통 토큰(`return`, `self`, `null`, `get`, `value`, 라이선스 문구 등) + 결과에 있는 언어들의 예약어(Java·Kotlin·Python·JS/TS·C/C++·C#·Go·Rust·Swift·PHP·Ruby 등)
    + 영어 기능어(`that`, `is`, `the` — 주석과 `assertThat`·`isEmpty` 같은 이름에서 나옴). 더 뺄 단어는 `warnPriority.topics.extraStopwords`에 넣습니다.
@@ -241,6 +246,8 @@ CPU만 쓰면 오래 걸립니다. 4코어 CPU에서 측정한 값:
 | 대상 | 서로 다른 코드 조각 | 첫 실행 | 다시 실행(임베딩 캐시 사용) |
 | --- | --- | --- | --- |
 | google/gson `fix, bug` 중 최근 60개 커밋(수정 전 파일 373개) | 약 3,400개 | 약 16분 | 약 30초 |
+| google/gson `fix, bug` 전체 380개 커밋, 테스트 포함(수정 전 파일 1,587개) | 10,848개 | 새 조각 7,609개 계산에 약 37분 | — |
+| google/gson `fix, bug` 전체 380개 커밋, 테스트 제외(기본, 수정 전 파일 844개) | 5,280개 | — | 약 1분 |
 
 CPU에서는 대략 서로 다른 코드 조각 3,400개에 16분 정도이므로, 수집한 커밋이 많으면 그에 비례해 늘어납니다(시작할 때 출력 창 로그에 조각 수가 나옵니다).
 진행 상황은 알림에 표시되고 언제든 취소할 수 있으며, 그때까지 계산한 임베딩은 캐시에 남아 다음 실행에 이어서 씁니다.
@@ -263,6 +270,7 @@ CPU에서는 대략 서로 다른 코드 조각 3,400개에 16분 정도이므�
 | `warnPriority.topics.model` | `nomic-ai/CodeRankEmbed` | 임베딩 모델 |
 | `warnPriority.topics.minTopicSize` | `0` (자동) | 토픽 최소 크기(코드 조각 수). `0`: 서로 다른 조각 수의 약 1%. 크게 하면 토픽 수 K가 줄어듦 |
 | `warnPriority.topics.extraStopwords` | `[]` | 토픽 키워드에서 추가로 뺄 단어 |
+| `warnPriority.topics.excludeTestFiles` | `true` | 테스트 파일은 토픽 모델링에서 뺌 |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
 
 
@@ -325,7 +333,7 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   npm run collect -- topics results/google_gson/google_gson_fix-bug_20261107-104155.json --python python3
   ```
 
-  옵션: `--python <경로>`, `--model <모델>`, `--min-topic-size N`, `--extra-stopwords a,b`.
+  옵션: `--python <경로>`, `--model <모델>`, `--min-topic-size N`, `--extra-stopwords a,b`, `--include-tests`(테스트 파일도 포함).
   스크립트를 직접 쓸 수도 있습니다: `python resources/topics/topic_model.py <result.json> --help`
 - 실제 PMD로 도는 테스트까지 실행하려면: `WARNPRIORITY_PMD_HOME=<PMD 폴더> npm test` (없으면 그 테스트만 건너뜀)
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)

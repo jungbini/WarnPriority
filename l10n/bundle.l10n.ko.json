@@ -53,5 +53,7 @@
   "Creating the Python environment...": "Python 환경 만드는 중...",
   "Installing BERTopic, sentence-transformers and PyTorch (this can take several minutes)...": "BERTopic, sentence-transformers, PyTorch 설치 중(몇 분 걸릴 수 있음)...",
   "Show Keywords": "키워드 보기",
-  "Found {0} topics. Saved the topic shares of {1} before files to {2}.": "토픽 {0}개를 찾았습니다. 수정 전 파일 {1}개의 토픽 비율을 {2}에 저장했습니다."
+  "Found {0} topics. Saved the topic shares of {1} before files to {2}.": "토픽 {0}개를 찾았습니다. 수정 전 파일 {1}개의 토픽 비율을 {2}에 저장했습니다.",
+  "{0} test files were left out.": "테스트 파일 {0}개는 제외했습니다.",
+  "Code that belongs to no topic is in the \"Unclassified\" column.": "어느 토픽에도 속하지 않은 코드는 마지막 \"Unclassified\" 열에 있습니다."
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+
+- 토픽 모델링에서 **테스트 파일 제외**(`warnPriority.topics.excludeTestFiles`, 기본 켜짐): 테스트 폴더(`test/`, `tests/`, `__tests__/`, `spec/`, `androidTest/` …)나
+  테스트 이름 규칙(`*Test.java`, `*IT.java`, `test_*.py`, `*_test.go`, `*.spec.ts`, `*_spec.rb` …)의 파일. CLI: `--include-tests`로 포함
+- 어느 토픽에도 속하지 않은 코드는 가장 가까운 토픽에 억지로 넣지 않고 **마지막 `Unclassified`(미분류) 열**로 따로 기록
+  (`topic-keywords.csv`에도 마지막 행으로 표시). 이전처럼 넣으려면 스크립트 옵션 `--assign-outliers`
+- 완료 알림에 제외한 테스트 파일 수와 미분류 열 안내 표시
+- `.vsix`에 Python 캐시 파일(`__pycache__/*.pyc`)이 들어가지 않도록 수정(0.9.0 패키지에 섞여 있었음)
+
 ## 0.9.0
 
 - **수정 전 코드 토픽 모델링(BERTopic)**: `WarnPriority: 수정 전 코드 토픽 모델링 (BERTopic)` 명령(탐색기 우클릭, CLI `topics`).

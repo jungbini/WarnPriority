@@ -11,7 +11,7 @@
  *        Runs PMD on the saved before/after files and writes <result>.pmd.json.
  *
  *   node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10]
- *        [--extra-stopwords a,b]
+ *        [--extra-stopwords a,b] [--include-tests]
  *        Topic modeling (BERTopic) of the "before" files; writes <result>.topics.csv and <result>.topic-keywords.csv.
  *        The Python needs: pip install -r resources/topics/requirements.txt
  */
@@ -50,7 +50,7 @@ function usage(): never {
       '       node out/cli.js pmd <result.json> [--ruleset all|<rulesets>] [--pmd-home dir] [--java path]\n' +
       '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.\n' +
       '\n' +
-      '       node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10] [--extra-stopwords a,b]\n' +
+      '       node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10] [--extra-stopwords a,b] [--include-tests]\n' +
       '  Topic modeling (BERTopic) of the before files; the Python needs resources/topics/requirements.txt installed.',
   );
   process.exit(2);
@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     const a = args[i];
     if (a.startsWith('--')) {
       const name = a.slice(2);
-      if (['case-sensitive', 'regex', 'merges', 'ignore-ws', 'quiet'].includes(name)) {
+      if (['case-sensitive', 'regex', 'merges', 'ignore-ws', 'include-tests', 'quiet'].includes(name)) {
         flags[name] = true;
       } else if (i + 1 < args.length) {
         flags[name] = args[++i];
@@ -183,6 +183,7 @@ async function runTopicsCommand(resultFile: string, flags: Record<string, string
     model: flags.model as string | undefined,
     minTopicSize: flags['min-topic-size'] ? parseInt(flags['min-topic-size'] as string, 10) : undefined,
     extraStopwords: typeof flags['extra-stopwords'] === 'string' ? flags['extra-stopwords'].split(',') : [],
+    includeTests: flags['include-tests'] === true,
     signal: controller.signal,
     log: quiet ? undefined : (l) => console.error(l),
     onProgress: quiet
@@ -198,7 +199,12 @@ async function runTopicsCommand(resultFile: string, flags: Record<string, string
           }
         },
   });
-  console.log(`Done: ${result.topics} topics over ${result.files} before files (${result.uniqueChunks} distinct code chunks).`);
+  console.log(
+    `Done: ${result.topics} topics over ${result.files} before files (${result.uniqueChunks} distinct code chunks` +
+      (result.unclassifiedChunks > 0 ? `, ${result.unclassifiedChunks} unclassified` : '') +
+      (result.testFiles > 0 ? `; ${result.testFiles} test files left out` : '') +
+      ').',
+  );
   console.log(result.csv);
   console.log(result.keywordsCsv);
 }

@@ -21,7 +21,20 @@ export type TopicProgress =
   | { stage: 'embed'; done: number; total: number }
   | { stage: 'topics' }
   | { stage: 'write' }
-  | { stage: 'done'; topics: number; files: number; chunks: number; uniqueChunks: number; outliers: number; csv: string; keywordsCsv: string };
+  | {
+      stage: 'done';
+      topics: number;
+      files: number;
+      /** Test files left out. */
+      testFiles: number;
+      chunks: number;
+      uniqueChunks: number;
+      outliers: number;
+      /** Distinct chunks in the "Unclassified" column (0 when outliers were assigned to topics). */
+      unclassifiedChunks: number;
+      csv: string;
+      keywordsCsv: string;
+    };
 
 export type TopicResult = Extract<TopicProgress, { stage: 'done' }>;
 
@@ -31,6 +44,8 @@ export interface TopicModelOptions {
   model?: string;
   minTopicSize?: number;
   extraStopwords?: string[];
+  /** Also model test files (left out by default). */
+  includeTests?: boolean;
   signal?: AbortSignal;
   /** stderr of the script (model download, BERTopic messages, errors). */
   log?: (line: string) => void;
@@ -49,6 +64,9 @@ export async function runTopicModel(opts: TopicModelOptions): Promise<TopicResul
   const extra = (opts.extraStopwords ?? []).map((w) => w.trim()).filter((w) => w);
   if (extra.length > 0) {
     args.push('--extra-stopwords', extra.join(','));
+  }
+  if (opts.includeTests) {
+    args.push('--include-tests');
   }
   let result: TopicResult | undefined;
   const { code, stderr } = await runPython(opts.python, args, {

@@ -6,6 +6,8 @@
 Pipeline
   1. Files: the "before" version of every file in the result JSON
      (<project>/<sha>/before/<oldFile or file>; added files have none).
+     Test files (test/ directories, *Test.java, test_*.py, *.spec.ts, ...)
+     are left out unless --include-tests is given.
   2. Chunks: each file is split into chunks of code (blocks separated by blank
      lines, merged up to --max-chunk-lines), because a file usually implements
      several functions and long files exceed the model context. License
@@ -14,13 +16,14 @@ Pipeline
      that were changed often do not dominate the topics.
   3. Embeddings: CodeRankEmbed (nomic-ai/CodeRankEmbed) via sentence-transformers.
   4. Topics: BERTopic (UMAP + HDBSCAN), which chooses the number of topics K.
-     Outlier chunks are assigned to their nearest topic (--keep-outliers keeps them).
+     Chunks that belong to no topic (HDBSCAN outliers) are counted in a last
+     "Unclassified" column (--assign-outliers puts them into their nearest topic).
   5. Keywords: c-TF-IDF over identifiers split into words (getUserName ->
      get user name), without code stopwords (language keywords, common tokens).
   6. Per file: the share of the file's code lines in each topic.
 
 Output (next to the result JSON unless --out is given)
-  <result>.topics.csv          File Name, Topic #1 (keywords), ..., Topic #K (keywords)
+  <result>.topics.csv          File Name, Topic #1 (keywords), ..., Topic #K (keywords)[, Unclassified]
   <result>.topic-keywords.csv  Topic, Keywords (c-TF-IDF), Chunks, Code lines
 
 Progress is printed as "PROGRESS {json}" lines on stdout; everything else goes to stderr.
@@ -231,21 +234,46 @@ def chunk_code(text: str, min_lines: int, max_lines: int) -> List[Tuple[str, int
 # Result file and aggregation
 # --------------------------------------------------------------------------
 
-def before_files(result_file: str) -> List[Tuple[str, str]]:
-    """(name for the CSV, absolute path) of every saved "before" file, in result order."""
+TEST_DIRECTORIES = {'test', 'tests', '__tests__', 'testing', 'spec', 'specs', 'androidtest', 'testfixtures',
+                    'integrationtest', 'integration-test', 'integration-tests', 'it-test'}
+TEST_FILE_NAME = re.compile(
+    r'(^test_.*\.py$|_tests?\.py$|^conftest\.py$'            # Python
+    r'|_test\.(go|rb|rs|cc|cpp|cxx|c|h|hpp)$|_unittest\.(cc|cpp|c)$|^test_.*\.(c|cc|cpp)$'  # Go, Ruby, Rust, C/C++
+    r'|\.(test|spec)\.[cm]?[jt]sx?$|_spec\.rb$'               # JS/TS, Ruby
+    r'|(Test|Tests|TestCase|IT|Spec)\.(java|kt|kts|scala|groovy|cs|swift|php|m|mm)$'  # JVM, C#, Swift, PHP, ObjC
+    r'|^Test[A-Z_]\w*\.(java|kt|scala|groovy|cs|php)$)')
+
+
+def is_test_file(repo_path: str) -> bool:
+    """Heuristic: the file sits in a test directory or is named like a test in its language."""
+    parts = repo_path.replace('\\', '/').split('/')
+    if any(p.lower() in TEST_DIRECTORIES for p in parts[:-1]):
+        return True
+    return bool(TEST_FILE_NAME.search(parts[-1]))
+
+
+def before_files(result_file: str, include_tests: bool = True) -> Tuple[List[Tuple[str, str]], int]:
+    """(name for the CSV, absolute path) of every saved "before" file, in result order, and the
+    number of test files left out (when include_tests is False)."""
     with open(result_file, encoding='utf-8') as f:
         data = json.load(f)
     if not isinstance(data, list) or not all(isinstance(c, dict) and 'sha' in c and 'files' in c for c in data):
         raise ValueError(f'{os.path.basename(result_file)} is not a WarnPriority result file')
     project = os.path.dirname(os.path.abspath(result_file))
     out: List[Tuple[str, str]] = []
+    skipped_tests = 0
     for commit in data:
         for f in commit['files']:
-            rel = f"{commit['sha']}/before/{f.get('oldFile') or f['file']}"
+            repo_path = f.get('oldFile') or f['file']
+            rel = f"{commit['sha']}/before/{repo_path}"
             path = os.path.join(project, *rel.split('/'))
-            if os.path.isfile(path):
-                out.append((rel, path))
-    return out
+            if not os.path.isfile(path):
+                continue
+            if not include_tests and is_test_file(repo_path):
+                skipped_tests += 1
+                continue
+            out.append((rel, path))
+    return out, skipped_tests
 
 
 def file_topic_shares(chunk_files: Sequence[int], chunk_lines: Sequence[int], chunk_topics: Sequence[int],
@@ -257,6 +285,21 @@ def file_topic_shares(chunk_files: Sequence[int], chunk_lines: Sequence[int], ch
         totals[f] += lines
         weights[f][t] = weights[f].get(t, 0) + lines
     return [{t: 100.0 * w / totals[i] for t, w in weights[i].items()} if totals[i] else {} for i in range(n_files)]
+
+
+UNCLASSIFIED = -1
+
+
+def topic_columns(topic_ids: Iterable[int], top_words: Dict[int, List[str]], n_keywords: int) -> Tuple[List[int], Dict[int, str]]:
+    """Column order and headers: "Topic #1 (keywords)" ... in BERTopic order (0 = largest), then
+    "Unclassified" for chunks that belong to no topic, if there are any."""
+    ids = sorted(set(topic_ids))
+    ordered = [t for t in ids if t != UNCLASSIFIED]
+    labels = {t: f"Topic #{n} ({', '.join(top_words.get(t, [])[:n_keywords])})" for n, t in enumerate(ordered, start=1)}
+    if UNCLASSIFIED in ids:
+        ordered.append(UNCLASSIFIED)
+        labels[UNCLASSIFIED] = 'Unclassified'
+    return ordered, labels
 
 
 def write_topics_csv(path: str, file_names: Sequence[str], shares: Sequence[Dict[int, float]],
@@ -308,7 +351,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument('--batch-size', type=int, default=16)
     p.add_argument('--device', default=None, help='cpu, cuda, mps (default: automatic)')
     p.add_argument('--seed', type=int, default=42, help='UMAP random state, for reproducible topics')
-    p.add_argument('--keep-outliers', action='store_true', help='keep chunks HDBSCAN marks as outliers in an "Outliers" column')
+    p.add_argument('--assign-outliers', action='store_true',
+                   help='put chunks that belong to no topic into their nearest topic instead of an "Unclassified" column')
+    p.add_argument('--include-tests', action='store_true', help='also model test files (left out by default)')
     p.add_argument('--nr-topics', default='none', help='"none": the topics HDBSCAN finds (default); "auto": also merge similar topics; or a number')
     args = p.parse_args(argv)
 
@@ -319,9 +364,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     keywords_csv = (keywords_csv[: -len('.topics')] if keywords_csv.endswith('.topics') else keywords_csv) + '.topic-keywords.csv'
 
     # 1-2. Files and chunks -------------------------------------------------
-    files = before_files(result_file)
+    files, skipped_tests = before_files(result_file, include_tests=args.include_tests)
+    if skipped_tests:
+        log(f'{skipped_tests} test files left out (--include-tests keeps them)')
     if not files:
-        raise SystemExit('The result file lists no saved "before" files (only added files?).')
+        raise SystemExit('No "before" files to model' + (' (all of them are test files)' if skipped_tests else ' (only added files?)') + '.')
     progress('read', files=len(files))
     chunk_files: List[int] = []
     chunk_lines: List[int] = []
@@ -410,11 +457,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     found = sorted(set(topics) - {-1})
     if not found:
         raise SystemExit('BERTopic found no topics (every chunk is an outlier). Try a smaller --min-topic-size.')
-    outliers = sum(1 for t in topics if t == -1)
-    if outliers and not args.keep_outliers:
+    outliers = sum(1 for t in topics if t == UNCLASSIFIED)
+    if outliers and args.assign_outliers:
         topics = topic_model.reduce_outliers(words, topics, strategy='embeddings', embeddings=embeddings)
         topic_model.update_topics(words, topics=topics, vectorizer_model=vectorizer, ctfidf_model=ctfidf)
-    log(f'{len(found)} topics; {outliers} outlier chunks ' + ('kept' if args.keep_outliers else 'assigned to their nearest topic'))
+    log(f'{len(found)} topics; {outliers} of {len(docs)} distinct chunks belong to no topic ' +
+        ('(assigned to their nearest topic)' if args.assign_outliers else '("Unclassified")'))
 
     # 6. Per-file shares and output ---------------------------------------------
     progress('write')
@@ -422,18 +470,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     chunk_topics = [topic_of_key[k] for k in chunk_keys]
     shares = file_topic_shares(chunk_files, chunk_lines, chunk_topics, len(files))
 
-    # Topics in BERTopic order (0 = largest); "Topic #1" is topic 0.
-    topic_ids = sorted(set(chunk_topics) - {-1})
-    labels: Dict[int, str] = {}
+    scored = {t: topic_model.get_topic(t) or [] for t in set(chunk_topics)}
+    topic_ids, labels = topic_columns(chunk_topics, {t: [w for w, _ in ws] for t, ws in scored.items()}, args.keywords)
     keyword_rows = []
-    for n, t in enumerate(topic_ids, start=1):
-        words = topic_model.get_topic(t) or []
-        labels[t] = f"Topic #{n} ({', '.join(w for w, _ in words[: args.keywords])})"
+    for t in topic_ids:
         lines = sum(l for l, ct in zip(chunk_lines, chunk_topics) if ct == t)
-        keyword_rows.append([f'Topic #{n}', ', '.join(f'{w} ({s:.3f})' for w, s in words), sum(1 for x in topics if x == t), lines])
-    if -1 in chunk_topics:
-        topic_ids.append(-1)
-        labels[-1] = 'Outliers'
+        keyword_rows.append([labels[t].split(' (')[0], ', '.join(f'{w} ({sc:.3f})' for w, sc in scored[t]),
+                             sum(1 for x in topics if x == t), lines])
 
     write_topics_csv(out_csv, [name for name, _ in files], shares, topic_ids, labels)
     with open(keywords_csv, 'w', newline='', encoding='utf-8-sig') as f:
@@ -441,8 +484,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         w.writerow(['Topic', 'Keywords (c-TF-IDF)', 'Distinct chunks', 'Code lines'])
         w.writerows(keyword_rows)
 
-    progress('done', topics=len(found), files=len(files), chunks=len(chunk_keys), uniqueChunks=len(docs),
-             outliers=outliers, csv=out_csv, keywordsCsv=keywords_csv)
+    unclassified = sum(1 for x in topics if x == UNCLASSIFIED)
+    progress('done', topics=len(found), files=len(files), testFiles=skipped_tests, chunks=len(chunk_keys),
+             uniqueChunks=len(docs), outliers=outliers, unclassifiedChunks=unclassified, csv=out_csv, keywordsCsv=keywords_csv)
     return 0
 
 

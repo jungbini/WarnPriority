@@ -573,6 +573,7 @@ async function runTopicsCommand(context: vscode.ExtensionContext, output: vscode
             model: config.get<string>('topics.model', DEFAULT_EMBEDDING_MODEL).trim() || DEFAULT_EMBEDDING_MODEL,
             minTopicSize: config.get<number>('topics.minTopicSize', 0),
             extraStopwords: config.get<string[]>('topics.extraStopwords', []),
+            includeTests: !config.get<boolean>('topics.excludeTestFiles', true),
             signal: controller.signal,
             log: (l) => output.appendLine(l),
             onProgress: (p: TopicProgress) => {
@@ -666,11 +667,14 @@ async function showTopicResult(result: TopicResult, output: vscode.OutputChannel
   );
   const keywords = vscode.l10n.t('Show Keywords');
   const reveal = vscode.l10n.t('Reveal in File Explorer');
-  const choice = await vscode.window.showInformationMessage(
-    vscode.l10n.t('Found {0} topics. Saved the topic shares of {1} before files to {2}.', result.topics, result.files, path.basename(result.csv)),
-    keywords,
-    reveal,
-  );
+  let text = vscode.l10n.t('Found {0} topics. Saved the topic shares of {1} before files to {2}.', result.topics, result.files, path.basename(result.csv));
+  if (result.testFiles > 0) {
+    text += ' ' + vscode.l10n.t('{0} test files were left out.', result.testFiles);
+  }
+  if (result.unclassifiedChunks > 0) {
+    text += ' ' + vscode.l10n.t('Code that belongs to no topic is in the "Unclassified" column.');
+  }
+  const choice = await vscode.window.showInformationMessage(text, keywords, reveal);
   if (choice === keywords) {
     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(result.keywordsCsv), { preview: false });
   } else if (choice === reveal) {

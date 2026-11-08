@@ -95,7 +95,40 @@ class Chunking(unittest.TestCase):
         self.assertEqual(tm.chunk_code('\n\n', 10, 60), [])
 
 
+class TestFiles(unittest.TestCase):
+    def test_test_files_by_directory_and_name(self):
+        for p in ['gson/src/test/java/com/google/gson/GsonTest.java', 'src/test/java/A.java', 'app/src/androidTest/Foo.kt',
+                  'pkg/__tests__/x.js', 'tests/test_api.py', 'lib/util_test.go', 'web/app.spec.ts', 'ui/button.test.tsx',
+                  'spec/models/user_spec.rb', 'Core/ParserTests.cs', 'src/FooIT.java', 'src/TestHelper.java', 'conftest.py',
+                  'base/strings_unittest.cc']:
+            self.assertTrue(tm.is_test_file(p), p)
+        for p in ['gson/src/main/java/com/google/gson/Gson.java', 'src/Contest.java', 'src/Testable.java', 'src/latest.py',
+                  'lib/attestation.go', 'src/main/java/Specification.java', 'web/inspect.ts']:
+            self.assertFalse(tm.is_test_file(p), p)
+
+    def test_before_files_can_leave_out_tests(self):
+        with tempfile.TemporaryDirectory() as d:
+            for rel in ['abc/before/src/main/A.java', 'abc/before/src/test/ATest.java']:
+                os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+                open(os.path.join(d, rel), 'w').close()
+            result = [{'sha': 'abc', 'files': [{'file': 'src/main/A.java', 'diff': []}, {'file': 'src/test/ATest.java', 'diff': []}]}]
+            path = os.path.join(d, 'r.json')
+            with open(path, 'w') as f:
+                json.dump(result, f)
+            files, skipped = tm.before_files(path, include_tests=False)
+            self.assertEqual(([n for n, _ in files], skipped), (['abc/before/src/main/A.java'], 1))
+            self.assertEqual(len(tm.before_files(path, include_tests=True)[0]), 2)
+
+
 class Aggregation(unittest.TestCase):
+    def test_topic_columns_put_unclassified_last(self):
+        ids, labels = tm.topic_columns([1, -1, 0, 1, 0], {0: ['json', 'reader', 'x'], 1: ['date'], -1: ['misc']}, 2)
+        self.assertEqual(ids, [0, 1, -1])
+        self.assertEqual([labels[t] for t in ids], ['Topic #1 (json, reader)', 'Topic #2 (date)', 'Unclassified'])
+        ids, labels = tm.topic_columns([0, 1], {0: ['a'], 1: ['b']}, 5)
+        self.assertEqual(ids, [0, 1], 'no Unclassified column without unclassified code')
+
+
     def test_shares_are_weighted_by_code_lines(self):
         shares = tm.file_topic_shares([0, 0, 0, 1], [30, 10, 60, 5], [2, 0, 2, 1], 3)
         self.assertEqual(shares[0], {2: 90.0, 0: 10.0})
@@ -128,7 +161,8 @@ class Aggregation(unittest.TestCase):
             path = os.path.join(d, 'r.json')
             with open(path, 'w') as f:
                 json.dump(result, f)
-            self.assertEqual([n for n, _ in tm.before_files(path)], ['abc/before/src/Old.java'])
+            files, skipped = tm.before_files(path)
+            self.assertEqual(([n for n, _ in files], skipped), (['abc/before/src/Old.java'], 0))
             with open(path, 'w') as f:
                 json.dump({'not': 'a result'}, f)
             with self.assertRaises(ValueError):

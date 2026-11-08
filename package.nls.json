@@ -18,5 +18,6 @@
   "config.topics.pythonPath": "Python with `bertopic`, `sentence-transformers` and `einops` installed, used for topic modeling. Empty: WarnPriority creates its own Python environment on first use (needs Python 3.9+).",
   "config.topics.model": "Embedding model for topic modeling (a sentence-transformers model on Hugging Face). Default: `nomic-ai/CodeRankEmbed`.",
   "config.topics.minTopicSize": "Smallest topic, in code chunks (HDBSCAN `min_cluster_size`); the number of topics K follows from it automatically. `0` (default): about 1% of the distinct code chunks, at least 10, so K stays readable for small and large repositories. Larger values give fewer, broader topics.",
-  "config.topics.extraStopwords": "Additional words to leave out of the topic keywords, on top of the built-in code stopwords (language keywords and common tokens such as `return`, `self`, `null`)."
+  "config.topics.extraStopwords": "Additional words to leave out of the topic keywords, on top of the built-in code stopwords (language keywords and common tokens such as `return`, `self`, `null`).",
+  "config.topics.excludeTestFiles": "Leave test files out of topic modeling: files in test directories (`test/`, `tests/`, `__tests__/`, `spec/`, `androidTest/`, ...) or named like tests (`*Test.java`, `*Tests.cs`, `test_*.py`, `*_test.go`, `*.spec.ts`, ...). Their example data (`bag`, `truck`, ...) would otherwise form topics of their own."
 }
