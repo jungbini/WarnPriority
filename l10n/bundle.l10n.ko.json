@@ -34,6 +34,7 @@
   "PMD {0} is needed to analyze the files. Download it from Maven Central now ({1} MB, only once)?": "파일을 분석하려면 PMD {0}이(가) 필요합니다. 지금 Maven Central에서 내려받을까요? ({1} MB, 최초 1회)",
   "Downloading PMD {0}": "PMD {0} 내려받는 중",
   "PMD: warnings changed in {0} of {1} commits ({2} disappeared, {3} appeared, {4} unchanged). Saved to {5}.": "PMD: 커밋 {1}개 중 {0}개에서 warning이 바뀌었습니다(사라짐 {2}, 생김 {3}, 유지 {4}). {5}에 저장했습니다.",
+  "Warnings in the changed code: {0} before, {1} after (warning removal rate {2}).": "수정된 코드의 warning: 수정 전 {0}개, 수정 후 {1}개(warning removal rate {2}).",
   "{0} files could not be parsed by PMD and were skipped.": "PMD가 파싱하지 못한 파일 {0}개는 건너뛰었습니다.",
   "Currently open file": "현재 열린 파일",
   "Browse...": "찾아보기...",

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+- PMD 분석 결과(`.pmd.json`)의 파일마다 **규칙별 `rules`** 추가: 수정된 코드 블록의 warning 수 `before`(수정 전)·`after`(수정 후),
+  그중 사라진 `removed`·새로 생긴 `added`, 그리고 **`warningRemovalRate` = (before − after) / before**
+  (1 = 모두 제거, 0 = 같음, 음수 = 늘어남, before가 0이면 `null`)
+- 완료 알림과 CLI 출력에 전체 파일의 수정된 코드 warning 수(수정 전/후)와 warning removal rate 표시
+- `onChangedLine`이 줄이 추가만(또는 삭제만) 된 자리를 감싸는 warning도 `true`로 판정(예: 메서드 중간에 줄이 추가된 경우의 메서드 단위 warning)
+
 ## 0.11.0
 
 - 토픽 모델링이 **NVIDIA GPU를 쓰도록** Python 환경 준비 방식 변경: `nvidia-smi`로 GPU와 드라이버의 CUDA 버전을 감지해,

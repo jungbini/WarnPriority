@@ -457,6 +457,16 @@ async function showPmdResult(result: PmdAnalysisResult, output: vscode.OutputCha
     s.unchanged,
     path.basename(result.outputFile),
   );
+  if (s.warningRemovalRate !== null) {
+    text +=
+      ' ' +
+      vscode.l10n.t(
+        'Warnings in the changed code: {0} before, {1} after (warning removal rate {2}).',
+        s.changedCodeBefore,
+        s.changedCodeAfter,
+        s.warningRemovalRate,
+      );
+  }
   if (s.filesWithErrors > 0) {
     text += ' ' + vscode.l10n.t('{0} files could not be parsed by PMD and were skipped.', s.filesWithErrors);
   }

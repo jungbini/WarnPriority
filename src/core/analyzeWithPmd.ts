@@ -4,7 +4,7 @@ import * as path from 'path';
 import { PmdLocation } from './pmdInstaller';
 import { fileKey, runPmd } from './pmdRunner';
 import { OutputCommit } from './types';
-import { countLines, diffWarnings, FileWarningDiff } from './warningDiff';
+import { countLines, diffWarnings, FileWarningDiff, warningRemovalRate } from './warningDiff';
 import { formatJson } from './writers';
 
 export interface PmdAnalysisOptions {
@@ -30,6 +30,11 @@ export interface PmdAnalysisSummary {
   removed: number;
   added: number;
   unchanged: number;
+  /** Warnings in the changed code (the change blocks) of all analyzed files, before and after the commits. */
+  changedCodeBefore: number;
+  changedCodeAfter: number;
+  /** (changedCodeBefore - changedCodeAfter) / changedCodeBefore; null when changedCodeBefore is 0. */
+  warningRemovalRate: number | null;
 }
 
 export interface PmdAnalysisResult {
@@ -44,6 +49,7 @@ export interface PmdAnalysisResult {
  *     { "sha": "...",
  *       "files": [
  *         { "file": "src/A.java",
+ *           "rules": [ { "rule": "...", "ruleset": "...", "before": 2, "after": 1, "removed": 1, "added": 0, "warningRemovalRate": 0.5 } ],
  *           "removed": [ { "rule": "...", "ruleset": "...", "priority": 3, "line": 12, "endLine": 12, "onChangedLine": true, "message": "..." } ],
  *           "added":   [ ... ],
  *           "unchanged": 4 } ] }
@@ -57,6 +63,7 @@ interface OutputFileEntry {
   file: string;
   oldFile?: string;
   error?: string;
+  rules?: FileWarningDiff['rules'];
   removed?: FileWarningDiff['removed'];
   added?: FileWarningDiff['added'];
   unchanged?: number;
@@ -64,7 +71,8 @@ interface OutputFileEntry {
 
 /**
  * Runs PMD over the before/after files of every commit in a result JSON and
- * records, per commit and file, which warnings disappeared and which appeared.
+ * records, per commit and file, which warnings disappeared and which appeared,
+ * and per rule how many warnings the changed code had before and after.
  */
 export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnalysisResult> {
   const commits = await readResultFile(opts.resultFile);
@@ -126,6 +134,9 @@ export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnaly
     removed: 0,
     added: 0,
     unchanged: 0,
+    changedCodeBefore: 0,
+    changedCodeAfter: 0,
+    warningRemovalRate: null,
   };
   const output: { sha: string; files: OutputFileEntry[] }[] = [];
   for (const commit of commits) {
@@ -153,14 +164,20 @@ export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnaly
       summary.removed += d.removed.length;
       summary.added += d.added.length;
       summary.unchanged += d.unchanged;
+      for (const r of d.rules) {
+        summary.changedCodeBefore += r.before;
+        summary.changedCodeAfter += r.after;
+      }
       changed ||= d.removed.length > 0 || d.added.length > 0;
-      files.push({ ...head, removed: d.removed, added: d.added, unchanged: d.unchanged });
+      files.push({ ...head, rules: d.rules, removed: d.removed, added: d.added, unchanged: d.unchanged });
     }
     if (changed) {
       summary.commitsWithWarningChanges++;
     }
     output.push({ sha: commit.sha, files });
   }
+
+  summary.warningRemovalRate = warningRemovalRate(summary.changedCodeBefore, summary.changedCodeAfter);
 
   const outputFile = pmdOutputFile(opts.resultFile);
   await fs.writeFile(outputFile, formatJson(output) + '\n');

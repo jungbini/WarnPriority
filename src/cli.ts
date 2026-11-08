@@ -166,7 +166,8 @@ async function runPmdCommand(resultFile: string, flags: Record<string, string | 
   const s = result.summary;
   console.log(
     `Done: warnings changed in ${s.commitsWithWarningChanges}/${s.commits} commits: ${s.removed} disappeared, ${s.added} appeared, ` +
-      `${s.unchanged} unchanged` +
+      `${s.unchanged} unchanged; in the changed code ${s.changedCodeBefore} before, ${s.changedCodeAfter} after` +
+      (s.warningRemovalRate !== null ? ` (warning removal rate ${s.warningRemovalRate})` : '') +
       (s.filesWithErrors > 0 ? `; ${s.filesWithErrors} files could not be parsed` : '') +
       (s.skippedRules > 0 ? `; ${s.skippedRules} rules skipped because of their configuration` : ''),
   );

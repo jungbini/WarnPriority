@@ -3,7 +3,8 @@
 GitHub 저장소의 커밋 이력에서 정적 분석 warning의 변화를 연구하기 위한 VS Code 확장입니다. 세 단계로 씁니다.
 
 1. **변경 코드 수집** — 커밋 메시지에 키워드(예: `fix, bug`)가 들어간 커밋을 찾아, 바뀐 **줄 번호**를 JSON으로 저장하고 바뀐 소스 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 둡니다.
-2. **PMD 분석** — 수정 전/후 파일에 PMD(Java 규칙 전체)를 실행해, 커밋으로 **사라진 warning과 새로 생긴 warning**을 기록합니다.
+2. **PMD 분석** — 수정 전/후 파일에 PMD(Java 규칙 전체)를 실행해, 커밋으로 **사라진 warning과 새로 생긴 warning**을 기록하고,
+   규칙별로 수정된 코드의 warning 수(수정 전/후)와 **warning removal rate**를 구합니다.
 3. **토픽 모델링** — 수정 전 소스 코드 전체를 CodeRankEmbed + BERTopic으로 토픽 모델링해, **파일별 기능(토픽) 비율**을 CSV로 정리합니다.
 
 ## 설치
@@ -57,7 +58,7 @@ warnpriority-output/
 ├─ .gitignore                                       ← 결과가 git 변경 목록에 뜨지 않도록 자동 생성
 └─ google_gson/                                     ← 저장소(프로젝트)별 폴더
    ├─ google_gson_fix-bug_20261107-104155.json      ← 1단계: 커밋 목록 + 바뀐 줄 번호
-   ├─ google_gson_fix-bug_20261107-104155.pmd.json  ← 2단계: 커밋별 사라진/생긴 warning
+   ├─ google_gson_fix-bug_20261107-104155.pmd.json  ← 2단계: 커밋별 사라진/생긴 warning, 규칙별 warning removal rate
    ├─ google_gson_fix-bug_20261107-104155.topics.csv          ← 3단계: 파일별 토픽 비율(%)
    ├─ google_gson_fix-bug_20261107-104155.topic-keywords.csv  ← 3단계: 토픽별 키워드
    ├─ .topic-embeddings/                            ← 3단계 임베딩 캐시
@@ -150,6 +151,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 ## PMD로 warning 변화 분석
 
 수집한 커밋의 수정 전/후 파일에 [PMD](https://pmd.github.io/)를 실행해, 커밋으로 **사라진 warning**과 **새로 생긴 warning**을 기록합니다.
+파일마다 **규칙별로 수정된 코드 블록의 warning 수(수정 전/후)와 warning removal rate**도 구합니다.
 
 1. 수집이 끝나면 알림의 **PMD로 분석** 버튼을 누릅니다. 나중에 하려면 명령 팔레트에서 **`WarnPriority: 수집 결과를 PMD로 분석`**을 실행하거나, 탐색기에서 결과 JSON을 우클릭합니다.
 2. 처음 한 번은 PMD 7.29.0(Java 분석 모듈, 약 13 MB)을 Maven Central에서 내려받을지 묻습니다.
@@ -161,15 +163,19 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 ```json
 [
   {
-    "sha": "d8697083ce09f1c2cdd4fcd041577aa952408039",
+    "sha": "ff521d70b2ecf2ed85dd1012081493ad7d8c0ba6",
     "files": [
       {
-        "file": "common/src/main/java/.../ScreensaverManager.java",
+        "file": "gson/src/main/java/com/google/gson/internal/TroubleshootingGuide.java",
+        "rules": [
+          { "rule": "ClassWithOnlyPrivateConstructorsShouldBeFinal", "ruleset": "Design", "before": 1, "after": 0, "removed": 1, "added": 0, "warningRemovalRate": 1 },
+          { "rule": "CommentRequired", "ruleset": "Documentation", "before": 1, "after": 1, "removed": 0, "added": 0, "warningRemovalRate": 0 }
+        ],
         "removed": [
-          { "rule": "UnusedPrivateMethod", "ruleset": "Best Practices", "priority": 3, "line": 380, "endLine": 380, "message": "Avoid unused private methods such as 'hideDimOverlay()'.", "onChangedLine": false }
+          { "rule": "ClassWithOnlyPrivateConstructorsShouldBeFinal", "ruleset": "Design", "priority": 1, "line": 3, "endLine": 3, "message": "This class has only private constructors and may be final", "onChangedLine": true }
         ],
         "added": [],
-        "unchanged": 0
+        "unchanged": 3
       }
     ]
   }
@@ -178,16 +184,41 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 
 | 필드 | 내용 |
 | --- | --- |
+| `rules` | 규칙별로, 커밋이 **수정한 코드 블록**(`onChangedLine`이 `true`인 위치)에 있던 warning 수. 아래 [warning removal rate](#warning-removal-rate) 참고 |
 | `removed` | 커밋 전 파일에 있었는데 커밋 후 사라진 warning (`line`은 **수정 전** 파일 기준) |
 | `added` | 커밋 후 새로 생긴 warning (`line`은 **수정 후** 파일 기준) |
 | `unchanged` | 커밋 전후 모두 있는 warning 수 |
 | `rule` / `ruleset` / `priority` | PMD 규칙 이름 / 카테고리 / 우선순위(1 높음 … 5 낮음) |
-| `onChangedLine` | warning 범위(`line`~`endLine`)에 커밋이 바꾼 줄이 포함되는지. `false`로 사라진 warning은 다른 곳의 변경으로 해결된 경우입니다(예: 안 쓰던 private 메서드를 다른 곳에서 호출하기 시작) |
+| `onChangedLine` | warning이 커밋이 수정한 코드에 있는지: 범위(`line`~`endLine`)에 바뀐 줄이 포함되거나, 줄이 추가만(또는 삭제만) 된 자리를 감싸는 경우(예: 메서드 중간에 줄이 추가됨). `false`로 사라진 warning은 다른 곳의 변경으로 해결된 경우입니다(예: 안 쓰던 private 메서드를 다른 곳에서 호출하기 시작) |
 | `error` | PMD가 수정 전/후 파일을 파싱하지 못해 비교하지 않은 경우의 이유 |
 
 **같은 warning으로 보는 기준**: 같은 규칙의 warning이 대응하는 위치에 있으면 유지된 것으로 봅니다.
 바뀌지 않은 줄은 줄 번호가 밀린 만큼 보정하고, 바뀐 줄은 같은 변경 블록 안에서 찾습니다(메시지까지 같은 것을 먼저 대응).
 코드가 파일의 다른 위치로 옮겨지면 사라짐+생김으로 기록됩니다.
+
+### warning removal rate
+
+`rules`는 파일의 **수정된 코드 블록**만 보고 규칙별로 warning을 셉니다(바뀌지 않은 줄의 warning은 세지 않음).
+
+| 필드 | 내용 |
+| --- | --- |
+| `before` | 수정 전 코드 블록에서 이 규칙을 위반한 warning 수 |
+| `after` | 수정 후 코드 블록에서 이 규칙을 위반한 warning 수. 항상 `before − removed + added` |
+| `removed` | `before` 중 커밋으로 사라진 warning 수 |
+| `added` | `after` 중 커밋으로 새로 생긴 warning 수 |
+| `warningRemovalRate` | **(before − after) / before** (소수점 4자리) |
+
+`warningRemovalRate`의 의미:
+
+- `1`: 수정 전에 있던 warning이 모두 사라짐(after = 0)
+- `0`~`1`: 줄어듦 (예: 2개 → 1개면 `0.5`)
+- `0`: 수정 전과 같은 수
+- 음수: 늘어남 (예: 1개 → 3개면 `-2`)
+- `null`: 수정 전에 그 규칙의 warning이 없었음(before = 0, 새 파일 포함)
+
+수를 기준으로 하므로, 하나가 사라지고 다른 하나가 생기면(`removed: 1, added: 1`) 비율은 `0`입니다. 이런 경우는 `removed`/`added`로 구분하세요.
+여러 파일·커밋을 합쳐 규칙별 비율을 낼 때는 비율을 평균하지 말고 `before`·`after`를 합한 뒤 계산하면 `null`과 작은 표본 문제를 피할 수 있습니다.
+완료 알림과 출력 창에는 분석한 모든 파일을 합친 값(수정된 코드의 warning 수정 전/후 개수와 warning removal rate)이 나옵니다.
 
 참고
 - 분석 대상은 바뀐 `.java` 파일뿐이고(프로젝트 전체가 아님), 빌드 없이 실행하므로 클래스패스가 없습니다. 타입 정보가 필요한 일부 PMD 규칙은 정확도가 떨어질 수 있습니다.
