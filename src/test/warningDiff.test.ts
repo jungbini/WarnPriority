@@ -22,7 +22,7 @@ test('a warning that stays on a modified line is unchanged, even if its message 
     removed: [],
     added: [],
     unchanged: 1,
-    rules: [{ rule: 'A', ruleset: 'Best Practices', before: 1, after: 1, removed: 0, added: 0, warningRemovalRate: 0 }],
+    rules: [{ rule: 'A', ruleset: 'Best Practices', priority: 3, before: 1, after: 1, removed: 0, added: 0, warningRemovalRate: 0 }],
   });
 });
 

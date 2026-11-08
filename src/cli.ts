@@ -8,7 +8,7 @@
  *        [--cache <dir>] [--git <path>]
  *
  *   node out/cli.js pmd <result.json> [--ruleset all|rulesets/java/quickstart.xml|...] [--pmd-home dir] [--java path]
- *        Runs PMD on the saved before/after files and writes <result>.pmd.json.
+ *        Runs PMD on the saved before/after files and writes <result>.pmd.json and <result>.pmd-rules.csv.
  *
  *   node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10]
  *        [--extra-stopwords a,b] [--include-tests]
@@ -172,6 +172,7 @@ async function runPmdCommand(resultFile: string, flags: Record<string, string | 
       (s.skippedRules > 0 ? `; ${s.skippedRules} rules skipped because of their configuration` : ''),
   );
   console.log(result.outputFile);
+  console.log(result.rulesFile);
 }
 
 async function runTopicsCommand(resultFile: string, flags: Record<string, string | boolean>): Promise<void> {

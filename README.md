@@ -58,7 +58,8 @@ warnpriority-output/
 ├─ .gitignore                                       ← 결과가 git 변경 목록에 뜨지 않도록 자동 생성
 └─ google_gson/                                     ← 저장소(프로젝트)별 폴더
    ├─ google_gson_fix-bug_20261107-104155.json      ← 1단계: 커밋 목록 + 바뀐 줄 번호
-   ├─ google_gson_fix-bug_20261107-104155.pmd.json  ← 2단계: 커밋별 사라진/생긴 warning, 규칙별 warning removal rate
+   ├─ google_gson_fix-bug_20261107-104155.pmd.json  ← 2단계: 커밋별 사라진/생긴 warning, 파일·규칙별 warning removal rate
+   ├─ google_gson_fix-bug_20261107-104155.pmd-rules.csv     ← 2단계: 전체 결과를 규칙별로 합친 warning removal rate 표
    ├─ google_gson_fix-bug_20261107-104155.topics.csv          ← 3단계: 파일별 토픽 비율(%)
    ├─ google_gson_fix-bug_20261107-104155.topic-keywords.csv  ← 3단계: 토픽별 키워드
    ├─ .topic-embeddings/                            ← 3단계 임베딩 캐시
@@ -159,6 +160,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
    이미 설치한 PMD가 있으면 `warnPriority.pmd.home`에 지정합니다.
 3. **Java 8 이상**이 필요합니다(`warnPriority.pmd.java` → `JAVA_HOME` → VS Code Java 확장의 JDK → PATH의 `java` 순으로 찾음).
 4. 결과는 수집 결과 옆에 `<결과 파일 이름>.pmd.json`으로 저장되고 바로 열립니다.
+   전체 결과를 규칙별로 합친 표 `<결과 파일 이름>.pmd-rules.csv`도 함께 저장됩니다(완료 알림의 **규칙별 표 보기**, [규칙별 표](#규칙별-표-pmd-rulescsv) 참고).
 
 ```json
 [
@@ -168,8 +170,8 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
       {
         "file": "gson/src/main/java/com/google/gson/internal/TroubleshootingGuide.java",
         "rules": [
-          { "rule": "ClassWithOnlyPrivateConstructorsShouldBeFinal", "ruleset": "Design", "before": 1, "after": 0, "removed": 1, "added": 0, "warningRemovalRate": 1 },
-          { "rule": "CommentRequired", "ruleset": "Documentation", "before": 1, "after": 1, "removed": 0, "added": 0, "warningRemovalRate": 0 }
+          { "rule": "ClassWithOnlyPrivateConstructorsShouldBeFinal", "ruleset": "Design", "priority": 1, "before": 1, "after": 0, "removed": 1, "added": 0, "warningRemovalRate": 1 },
+          { "rule": "CommentRequired", "ruleset": "Documentation", "priority": 3, "before": 1, "after": 1, "removed": 0, "added": 0, "warningRemovalRate": 0 }
         ],
         "removed": [
           { "rule": "ClassWithOnlyPrivateConstructorsShouldBeFinal", "ruleset": "Design", "priority": 1, "line": 3, "endLine": 3, "message": "This class has only private constructors and may be final", "onChangedLine": true }
@@ -219,6 +221,34 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 수를 기준으로 하므로, 하나가 사라지고 다른 하나가 생기면(`removed: 1, added: 1`) 비율은 `0`입니다. 이런 경우는 `removed`/`added`로 구분하세요.
 여러 파일·커밋을 합쳐 규칙별 비율을 낼 때는 비율을 평균하지 말고 `before`·`after`를 합한 뒤 계산하면 `null`과 작은 표본 문제를 피할 수 있습니다.
 완료 알림과 출력 창에는 분석한 모든 파일을 합친 값(수정된 코드의 warning 수정 전/후 개수와 warning removal rate)이 나옵니다.
+
+### 규칙별 표 (`.pmd-rules.csv`)
+
+모든 커밋·파일의 `rules`를 규칙별로 합친 표입니다. 비율은 파일별 비율의 평균이 아니라 **합계로 계산**합니다: (Before 합 − After 합) / Before 합.
+UTF-8(BOM) CSV라 Excel에서 바로 열립니다. google/gson `fix, bug`(커밋 380개)의 예:
+
+```csv
+Rule,Ruleset,Priority,Before,After,Removed,Added,Warning Removal Rate,Files,Commits
+IdenticalCatchBranches,Code Style,3,21,5,17,1,0.7619,10,8
+ControlStatementBraces,Code Style,3,35,11,35,11,0.6857,20,13
+MissingOverride,Best Practices,3,73,57,64,48,0.2192,54,32
+PublicMemberInNonPublicType,Design,3,184,145,112,73,0.212,96,47
+MethodArgumentCouldBeFinal,Code Style,3,812,1266,413,867,-0.5591,345,137
+CommentRequired,Documentation,3,934,1742,364,1172,-0.8651,522,221
+UseCollectionIsEmpty,Best Practices,3,0,1,0,1,,1,1
+```
+
+| 열 | 내용 |
+| --- | --- |
+| `Rule` / `Ruleset` / `Priority` | PMD 규칙 이름 / 카테고리 / PMD 우선순위(1 높음 … 5 낮음) |
+| `Before` / `After` | 수정된 코드 블록의 warning 수 합계(수정 전 / 수정 후) |
+| `Removed` / `Added` | 그중 커밋으로 사라진 / 새로 생긴 warning 수 합계 |
+| `Warning Removal Rate` | (Before − After) / Before. Before가 0이면 빈칸 |
+| `Files` / `Commits` | 수정된 코드에 이 규칙의 warning이 있었던 파일 수 / 커밋 수 |
+
+- **정렬**: Warning Removal Rate가 높은 순, 같으면 Before가 많은 순입니다. Before가 0인 규칙(빈칸)은 맨 끝에 둡니다.
+- **표본 크기**: Before가 1~2개뿐인 규칙은 비율이 1이나 큰 음수로 쉽게 치우칩니다. 순위를 매길 때는 Before(또는 Files)가 충분한 규칙만 보세요(위 gson 결과에서 Before 50개 이상은 21개 규칙).
+- 테스트 파일도 포함합니다. 새로 추가된 파일의 warning은 모두 `Added`로 들어가 비율을 낮춥니다(gson 전체: 7,844 → 16,191, −1.0641).
 
 참고
 - 분석 대상은 바뀐 `.java` 파일뿐이고(프로젝트 전체가 아님), 빌드 없이 실행하므로 클래스패스가 없습니다. 타입 정보가 필요한 일부 PMD 규칙은 정확도가 떨어질 수 있습니다.
@@ -432,8 +462,9 @@ src/
    ├─ pmdArtifacts.ts  PMD jar 목록(버전·SHA-256 고정)
    ├─ pmdInstaller.ts  PMD 내려받기·검증·설치
    ├─ pmdRunner.ts     PMD 실행, JSON 리포트 읽기 (ruleset "all" → resources/pmd/all-java-rules.xml)
-   ├─ warningDiff.ts   커밋 전후 warning 대응(분석기와 무관)
-   ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json
+   ├─ warningDiff.ts   커밋 전후 warning 대응, 규칙별 수정된 코드 warning 수·warning removal rate(분석기와 무관)
+   ├─ ruleTable.ts     전체 결과의 규칙별 합계 → <결과>.pmd-rules.csv
+   ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json, <결과>.pmd-rules.csv
    ├─ topics.ts        토픽 모델링 스크립트 실행, 전용 Python 환경 준비
    ├─ collector.ts     전체 파이프라인
    └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)

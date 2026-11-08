@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PmdLocation } from './pmdInstaller';
 import { fileKey, runPmd } from './pmdRunner';
+import { formatRuleTable, totalRules } from './ruleTable';
 import { OutputCommit } from './types';
 import { countLines, diffWarnings, FileWarningDiff, warningRemovalRate } from './warningDiff';
 import { formatJson } from './writers';
@@ -39,6 +40,8 @@ export interface PmdAnalysisSummary {
 
 export interface PmdAnalysisResult {
   outputFile: string;
+  /** Totals per rule over all files (<result>.pmd-rules.csv). */
+  rulesFile: string;
   summary: PmdAnalysisSummary;
 }
 
@@ -49,7 +52,7 @@ export interface PmdAnalysisResult {
  *     { "sha": "...",
  *       "files": [
  *         { "file": "src/A.java",
- *           "rules": [ { "rule": "...", "ruleset": "...", "before": 2, "after": 1, "removed": 1, "added": 0, "warningRemovalRate": 0.5 } ],
+ *           "rules": [ { "rule": "...", "ruleset": "...", "priority": 3, "before": 2, "after": 1, "removed": 1, "added": 0, "warningRemovalRate": 0.5 } ],
  *           "removed": [ { "rule": "...", "ruleset": "...", "priority": 3, "line": 12, "endLine": 12, "onChangedLine": true, "message": "..." } ],
  *           "added":   [ ... ],
  *           "unchanged": 4 } ] }
@@ -57,6 +60,11 @@ export interface PmdAnalysisResult {
  */
 export function pmdOutputFile(resultFile: string): string {
   return resultFile.replace(/\.json$/i, '') + '.pmd.json';
+}
+
+/** The per-rule totals of the analysis, e.g. "x.json" -> "x.pmd-rules.csv" (see ruleTable.ts). */
+export function pmdRulesFile(resultFile: string): string {
+  return resultFile.replace(/\.json$/i, '') + '.pmd-rules.csv';
 }
 
 interface OutputFileEntry {
@@ -181,7 +189,9 @@ export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnaly
 
   const outputFile = pmdOutputFile(opts.resultFile);
   await fs.writeFile(outputFile, formatJson(output) + '\n');
-  return { outputFile, summary };
+  const rulesFile = pmdRulesFile(opts.resultFile);
+  await fs.writeFile(rulesFile, formatRuleTable(totalRules(output)));
+  return { outputFile, rulesFile, summary };
 }
 
 async function readResultFile(file: string): Promise<OutputCommit[]> {

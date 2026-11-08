@@ -28,6 +28,8 @@ export interface ChangedWarning extends Warning {
 export interface RuleWarningCounts {
   rule: string;
   ruleset: string;
+  /** Analyzer priority of the rule (PMD: 1 = highest ... 5 = lowest). */
+  priority: number;
   /** Warnings of the rule in the changed code before the commit. */
   before: number;
   /** Warnings of the rule in the changed code after the commit (= before - removed + added). */
@@ -145,7 +147,7 @@ export function diffWarnings(
   const count = (w: Warning) => {
     let r = rules.get(w.rule);
     if (!r) {
-      r = { rule: w.rule, ruleset: w.ruleset, before: 0, after: 0, removed: 0, added: 0, warningRemovalRate: null };
+      r = { rule: w.rule, ruleset: w.ruleset, priority: w.priority, before: 0, after: 0, removed: 0, added: 0, warningRemovalRate: null };
       rules.set(w.rule, r);
     }
     return r;

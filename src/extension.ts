@@ -474,8 +474,12 @@ async function showPmdResult(result: PmdAnalysisResult, output: vscode.OutputCha
     text += ' ' + vscode.l10n.t('{0} PMD rules were skipped because of their configuration (see the log).', s.skippedRules);
     output.show(true);
   }
+  const ruleTable = vscode.l10n.t('Show Rule Table');
   const reveal = vscode.l10n.t('Reveal in File Explorer');
-  if ((await vscode.window.showInformationMessage(text, reveal)) === reveal) {
+  const choice = await vscode.window.showInformationMessage(text, ruleTable, reveal);
+  if (choice === ruleTable) {
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(result.rulesFile), { preview: false });
+  } else if (choice === reveal) {
     await vscode.commands.executeCommand('revealFileInOS', uri);
   }
 }
