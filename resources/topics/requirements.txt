@@ -1,0 +1,9 @@
+# Python packages for topic_model.py (WarnPriority installs these into its own environment).
+bertopic==0.17.4
+# CodeRankEmbed's model code (trust_remote_code) needs transformers 4.x:
+# with transformers 5 it fails ("NomicBertModel has no attribute get_extended_attention_mask"),
+# and sentence-transformers 6 requires transformers 5.
+sentence-transformers==5.7.0
+transformers==4.57.6
+einops==0.8.2
+torch>=2.2

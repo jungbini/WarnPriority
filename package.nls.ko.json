@@ -13,5 +13,10 @@
   "command.runPmd.title": "수집 결과를 PMD로 분석",
   "config.pmd.ruleset": "실행할 PMD 규칙입니다. `all`(기본값): PMD Java 규칙 카테고리 8개(Best Practices, Code Style, Design, Documentation, Error Prone, Multithreading, Performance, Security)의 모든 규칙(약 300개). 그 밖에 `rulesets/java/quickstart.xml`(PMD 권장 세트) 같은 규칙 세트, `category/java/errorprone.xml,category/java/bestpractices.xml` 같은 카테고리, 또는 직접 만든 규칙 세트 XML 경로를 쉼표로 구분해 지정할 수 있습니다.",
   "config.pmd.home": "WarnPriority가 Maven Central에서 내려받는 PMD 대신 사용할, 압축을 푼 PMD 7 배포본 폴더(`lib/` 포함)입니다.",
-  "config.pmd.java": "PMD를 실행할 Java 실행 파일(Java 8 이상)입니다. 비워 두면 `JAVA_HOME`, VS Code Java 확장의 JDK(`java.jdt.ls.java.home`), PATH의 `java` 순서로 찾습니다."
+  "config.pmd.java": "PMD를 실행할 Java 실행 파일(Java 8 이상)입니다. 비워 두면 `JAVA_HOME`, VS Code Java 확장의 JDK(`java.jdt.ls.java.home`), PATH의 `java` 순서로 찾습니다.",
+  "command.topicModel.title": "수정 전 코드 토픽 모델링 (BERTopic)",
+  "config.topics.pythonPath": "토픽 모델링에 사용할 Python(`bertopic`, `sentence-transformers`, `einops` 설치됨)입니다. 비워 두면 처음 실행할 때 WarnPriority 전용 Python 환경을 만듭니다(Python 3.9 이상 필요).",
+  "config.topics.model": "토픽 모델링용 임베딩 모델(Hugging Face의 sentence-transformers 모델)입니다. 기본값: `nomic-ai/CodeRankEmbed`.",
+  "config.topics.minTopicSize": "토픽 하나의 최소 크기(코드 조각 수, HDBSCAN `min_cluster_size`)입니다. 크게 하면 더 적고 넓은 토픽이 나옵니다. 토픽 수는 자동으로 정해집니다.",
+  "config.topics.extraStopwords": "기본 코드 stopword(언어 예약어, `return`·`self`·`null` 같은 공통 토큰)에 더해 토픽 키워드에서 뺄 단어입니다."
 }

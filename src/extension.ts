@@ -8,6 +8,7 @@ import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { downloadSize, installPmd, locatePmd, PmdLocation } from './core/pmdInstaller';
 import { ALL_RULES } from './core/pmdRunner';
+import { DEFAULT_EMBEDDING_MODEL, managedPython, runTopicModel, setupManagedPython, TopicProgress, TopicResult } from './core/topics';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -23,6 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('warnPriority.collectCommitChanges', () => runCollect(context, output)),
     vscode.commands.registerCommand('warnPriority.clearRepositoryCache', () => clearCache(context, output)),
     vscode.commands.registerCommand('warnPriority.runPmd', (uri?: vscode.Uri) => runPmdCommand(context, output, uri)),
+    vscode.commands.registerCommand('warnPriority.topicModel', (uri?: vscode.Uri) => runTopicsCommand(context, output, uri)),
   );
 }
 
@@ -325,7 +327,7 @@ async function runPmdCommand(context: vscode.ExtensionContext, output: vscode.Ou
     return;
   }
   const config = vscode.workspace.getConfiguration('warnPriority');
-  const resultFile = uri?.scheme === 'file' ? uri.fsPath : await pickResultFile(config);
+  const resultFile = uri?.scheme === 'file' ? uri.fsPath : await pickResultFile(config, vscode.l10n.t('Select a result file to analyze with PMD'));
   if (!resultFile) {
     return;
   }
@@ -456,7 +458,7 @@ async function showPmdResult(result: PmdAnalysisResult, output: vscode.OutputCha
 }
 
 /** Lets the user pick a result JSON: the open one, recent ones in the output folder, or any file. */
-async function pickResultFile(config: vscode.WorkspaceConfiguration): Promise<string | undefined> {
+async function pickResultFile(config: vscode.WorkspaceConfiguration, title: string): Promise<string | undefined> {
   type Item = vscode.QuickPickItem & { file?: string };
   const items: Item[] = [];
   const active = vscode.window.activeTextEditor?.document.uri;
@@ -474,7 +476,7 @@ async function pickResultFile(config: vscode.WorkspaceConfiguration): Promise<st
   const browse: Item = { label: `$(folder-opened) ${vscode.l10n.t('Browse...')}` };
   let picked: Item | undefined = browse;
   if (items.length > 0) {
-    picked = await vscode.window.showQuickPick([...items, browse], { title: vscode.l10n.t('Select a result file to analyze with PMD'), matchOnDescription: true });
+    picked = await vscode.window.showQuickPick([...items, browse], { title, matchOnDescription: true });
   }
   if (!picked) {
     return undefined;
@@ -483,7 +485,7 @@ async function pickResultFile(config: vscode.WorkspaceConfiguration): Promise<st
     return picked.file;
   }
   const uris = await vscode.window.showOpenDialog({
-    title: vscode.l10n.t('Select a result file to analyze with PMD'),
+    title,
     canSelectMany: false,
     filters: { JSON: ['json'] },
     defaultUri: root ? vscode.Uri.file(root) : undefined,
@@ -524,4 +526,154 @@ function resolveJava(config: vscode.WorkspaceConfiguration): string {
     }
   }
   return 'java';
+}
+
+/**
+ * Topic modeling of the "before" files of a result JSON (BERTopic with
+ * CodeRankEmbed embeddings); writes <result>.topics.csv and
+ * <result>.topic-keywords.csv.
+ */
+async function runTopicsCommand(context: vscode.ExtensionContext, output: vscode.OutputChannel, uri?: vscode.Uri): Promise<void> {
+  if (running) {
+    vscode.window.showWarningMessage(vscode.l10n.t('Another WarnPriority task is running. Wait for it to finish or cancel it.'));
+    return;
+  }
+  const config = vscode.workspace.getConfiguration('warnPriority');
+  const resultFile = uri?.scheme === 'file' ? uri.fsPath : await pickResultFile(config, vscode.l10n.t('Select a result file for topic modeling'));
+  if (!resultFile) {
+    return;
+  }
+  if (/\.pmd\.json$/i.test(resultFile)) {
+    vscode.window.showErrorMessage(vscode.l10n.t('Select a result JSON written by "Collect Changed Code", not a .pmd.json file.'));
+    return;
+  }
+
+  running = true;
+  output.appendLine(`[${new Date().toLocaleString()}] WarnPriority v${context.extension.packageJSON.version} | topic modeling of ${resultFile}`);
+  try {
+    const python = await ensureTopicPython(context, config, output);
+    if (!python) {
+      return;
+    }
+    output.appendLine(`Using Python ${python}`);
+    const result = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'WarnPriority: BERTopic', cancellable: true },
+      async (progress, token) => {
+        const controller = new AbortController();
+        const sub = token.onCancellationRequested(() => controller.abort());
+        let percent = 0;
+        const report = (message: string, target: number) => {
+          progress.report({ message, increment: Math.max(0, target - percent) });
+          percent = Math.max(percent, target);
+        };
+        try {
+          return await runTopicModel({
+            python,
+            resultFile,
+            model: config.get<string>('topics.model', DEFAULT_EMBEDDING_MODEL).trim() || DEFAULT_EMBEDDING_MODEL,
+            minTopicSize: config.get<number>('topics.minTopicSize', 10),
+            extraStopwords: config.get<string[]>('topics.extraStopwords', []),
+            signal: controller.signal,
+            log: (l) => output.appendLine(l),
+            onProgress: (p: TopicProgress) => {
+              switch (p.stage) {
+                case 'read':
+                  return report(vscode.l10n.t('Reading {0} before files...', p.files), 2);
+                case 'model':
+                  return report(vscode.l10n.t('Loading the embedding model {0} (downloaded on first use)...', p.model), 5);
+                case 'embed':
+                  return report(vscode.l10n.t('Embedding code chunks: {0}/{1}', p.done, p.total), 5 + (75 * p.done) / Math.max(p.total, 1));
+                case 'topics':
+                  return report(vscode.l10n.t('Finding topics with BERTopic...'), 82);
+                case 'write':
+                  return report(vscode.l10n.t('Saving the results...'), 97);
+              }
+            },
+          });
+        } finally {
+          sub.dispose();
+        }
+      },
+    );
+    running = false;
+    await showTopicResult(result, output);
+  } catch (e) {
+    if (e instanceof CancelledError) {
+      vscode.window.showInformationMessage(vscode.l10n.t('Topic modeling cancelled.'));
+      return;
+    }
+    const message = (e as Error).message;
+    output.appendLine(`ERROR: ${message}`);
+    const showLog = vscode.l10n.t('Show Log');
+    if ((await vscode.window.showErrorMessage(vscode.l10n.t('WarnPriority: topic modeling failed. {0}', message.split('\n')[0]), showLog)) === showLog) {
+      output.show();
+    }
+  } finally {
+    running = false;
+  }
+}
+
+/** warnPriority.topics.pythonPath, or the extension's own environment (created after asking). */
+async function ensureTopicPython(context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration, output: vscode.OutputChannel): Promise<string | undefined> {
+  const configured = config.get<string>('topics.pythonPath', '').trim();
+  if (configured) {
+    return configured;
+  }
+  const storageDir = context.globalStorageUri.fsPath;
+  const ready = await managedPython(storageDir);
+  if (ready) {
+    return ready;
+  }
+  const install = vscode.l10n.t('Install');
+  const choice = await vscode.window.showInformationMessage(
+    vscode.l10n.t('Topic modeling needs Python packages (BERTopic, sentence-transformers, PyTorch; about 1-4 GB). Create a Python environment for WarnPriority and install them now?'),
+    { modal: true },
+    install,
+  );
+  if (choice !== install) {
+    return undefined;
+  }
+  output.show(true);
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Setting up Python for topic modeling'), cancellable: true },
+    async (progress, token) => {
+      const controller = new AbortController();
+      const sub = token.onCancellationRequested(() => controller.abort());
+      try {
+        return await setupManagedPython(storageDir, {
+          signal: controller.signal,
+          log: (l) => output.appendLine(l),
+          onStep: (step) =>
+            progress.report({
+              message:
+                step === 'venv'
+                  ? vscode.l10n.t('Creating the Python environment...')
+                  : vscode.l10n.t('Installing BERTopic, sentence-transformers and PyTorch (this can take several minutes)...'),
+            }),
+        });
+      } finally {
+        sub.dispose();
+      }
+    },
+  );
+}
+
+async function showTopicResult(result: TopicResult, output: vscode.OutputChannel): Promise<void> {
+  output.appendLine(JSON.stringify(result));
+  const csvUri = vscode.Uri.file(result.csv);
+  await Promise.resolve(vscode.commands.executeCommand('vscode.open', csvUri, { preview: false })).catch((e: Error) =>
+    output.appendLine(`Could not open ${result.csv}: ${e.message}`),
+  );
+  const keywords = vscode.l10n.t('Show Keywords');
+  const reveal = vscode.l10n.t('Reveal in File Explorer');
+  const choice = await vscode.window.showInformationMessage(
+    vscode.l10n.t('Found {0} topics. Saved the topic shares of {1} before files to {2}.', result.topics, result.files, path.basename(result.csv)),
+    keywords,
+    reveal,
+  );
+  if (choice === keywords) {
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(result.keywordsCsv), { preview: false });
+  } else if (choice === reveal) {
+    await vscode.commands.executeCommand('revealFileInOS', csvUri);
+  }
 }

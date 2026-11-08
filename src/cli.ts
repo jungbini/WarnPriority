@@ -9,6 +9,11 @@
  *
  *   node out/cli.js pmd <result.json> [--ruleset all|rulesets/java/quickstart.xml|...] [--pmd-home dir] [--java path]
  *        Runs PMD on the saved before/after files and writes <result>.pmd.json.
+ *
+ *   node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10]
+ *        [--extra-stopwords a,b]
+ *        Topic modeling (BERTopic) of the "before" files; writes <result>.topics.csv and <result>.topic-keywords.csv.
+ *        The Python needs: pip install -r resources/topics/requirements.txt
  */
 import * as os from 'os';
 import * as path from 'path';
@@ -18,6 +23,7 @@ import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { installPmd, locatePmd } from './core/pmdInstaller';
 import { ALL_RULES } from './core/pmdRunner';
+import { runTopicModel } from './core/topics';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -42,7 +48,10 @@ function usage(): never {
       '  --ext defaults to source files of static-analyzable languages.\n' +
       '\n' +
       '       node out/cli.js pmd <result.json> [--ruleset all|<rulesets>] [--pmd-home dir] [--java path]\n' +
-      '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.',
+      '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.\n' +
+      '\n' +
+      '       node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10] [--extra-stopwords a,b]\n' +
+      '  Topic modeling (BERTopic) of the before files; the Python needs resources/topics/requirements.txt installed.',
   );
   process.exit(2);
 }
@@ -65,6 +74,13 @@ async function main(): Promise<void> {
     } else {
       positional.push(a);
     }
+  }
+  if (positional[0] === 'topics') {
+    if (positional.length < 2) {
+      usage();
+    }
+    await runTopicsCommand(path.resolve(positional[1]), flags);
+    return;
   }
   if (positional[0] === 'pmd') {
     if (positional.length < 2) {
@@ -155,6 +171,36 @@ async function runPmdCommand(resultFile: string, flags: Record<string, string | 
       (s.skippedRules > 0 ? `; ${s.skippedRules} rules skipped because of their configuration` : ''),
   );
   console.log(result.outputFile);
+}
+
+async function runTopicsCommand(resultFile: string, flags: Record<string, string | boolean>): Promise<void> {
+  const controller = new AbortController();
+  process.on('SIGINT', () => controller.abort());
+  const quiet = flags.quiet === true;
+  const result = await runTopicModel({
+    python: (flags.python as string) ?? (process.platform === 'win32' ? 'python' : 'python3'),
+    resultFile,
+    model: flags.model as string | undefined,
+    minTopicSize: flags['min-topic-size'] ? parseInt(flags['min-topic-size'] as string, 10) : undefined,
+    extraStopwords: typeof flags['extra-stopwords'] === 'string' ? flags['extra-stopwords'].split(',') : [],
+    signal: controller.signal,
+    log: quiet ? undefined : (l) => console.error(l),
+    onProgress: quiet
+      ? undefined
+      : (p) => {
+          if (p.stage === 'embed') {
+            process.stderr.write(`\r\x1b[KEmbedding ${p.done}/${p.total}`);
+            if (p.done === p.total) {
+              process.stderr.write('\n');
+            }
+          } else if (p.stage !== 'done') {
+            console.error(`[${p.stage}]`);
+          }
+        },
+  });
+  console.log(`Done: ${result.topics} topics over ${result.files} before files (${result.uniqueChunks} distinct code chunks).`);
+  console.log(result.csv);
+  console.log(result.keywordsCsv);
 }
 
 function defaultJava(): string {

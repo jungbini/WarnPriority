@@ -13,5 +13,10 @@
   "command.runPmd.title": "Analyze Collected Results with PMD",
   "config.pmd.ruleset": "PMD rules to run. `all` (default): every rule of PMD's eight Java categories (best practices, code style, design, documentation, error prone, multithreading, performance, security; about 300 rules). Otherwise a ruleset such as `rulesets/java/quickstart.xml` (PMD's recommended set), categories such as `category/java/errorprone.xml,category/java/bestpractices.xml`, or the path of your own ruleset XML, separated by commas.",
   "config.pmd.home": "Folder of an unpacked PMD 7 distribution (containing `lib/`) to use instead of the PMD that WarnPriority downloads from Maven Central.",
-  "config.pmd.java": "Java executable used to run PMD (Java 8 or newer). Empty: `JAVA_HOME`, then the JDK of VS Code's Java extension (`java.jdt.ls.java.home`), then `java` on PATH."
+  "config.pmd.java": "Java executable used to run PMD (Java 8 or newer). Empty: `JAVA_HOME`, then the JDK of VS Code's Java extension (`java.jdt.ls.java.home`), then `java` on PATH.",
+  "command.topicModel.title": "Topic Modeling of Before Files (BERTopic)",
+  "config.topics.pythonPath": "Python with `bertopic`, `sentence-transformers` and `einops` installed, used for topic modeling. Empty: WarnPriority creates its own Python environment on first use (needs Python 3.9+).",
+  "config.topics.model": "Embedding model for topic modeling (a sentence-transformers model on Hugging Face). Default: `nomic-ai/CodeRankEmbed`.",
+  "config.topics.minTopicSize": "Smallest topic, in code chunks (HDBSCAN `min_cluster_size`). Larger values give fewer, broader topics; the number of topics is chosen automatically.",
+  "config.topics.extraStopwords": "Additional words to leave out of the topic keywords, on top of the built-in code stopwords (language keywords and common tokens such as `return`, `self`, `null`)."
 }
