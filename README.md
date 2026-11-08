@@ -203,6 +203,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 
 1. 명령 팔레트에서 **`WarnPriority: 수정 전 코드 토픽 모델링 (BERTopic)`**을 실행하거나, 탐색기에서 결과 JSON을 우클릭합니다.
 2. 처음 한 번은 WarnPriority 전용 Python 환경을 만들어 BERTopic·sentence-transformers·PyTorch(약 1~4 GB)를 설치할지 묻습니다(Python 3.9 이상 필요).
+   **NVIDIA GPU가 있으면 PyTorch의 CUDA 빌드를 설치합니다**([GPU 사용](#gpu-사용) 참고).
    이미 준비된 Python이 있으면 `warnPriority.topics.pythonPath`에 지정합니다(`pip install -r resources/topics/requirements.txt`).
 3. 임베딩 모델 [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)(약 550 MB)는 처음 실행할 때 Hugging Face에서 내려받습니다.
 4. 결과는 수집 결과 옆에 저장되고 바로 열립니다.
@@ -238,6 +239,48 @@ File Name,Topic #1 (peeked, jj, pos, stack, cur),Topic #2 (variable, resolve, ow
    stopword = 공통 토큰(`return`, `self`, `null`, `get`, `value`, 라이선스 문구 등) + 결과에 있는 언어들의 예약어(Java·Kotlin·Python·JS/TS·C/C++·C#·Go·Rust·Swift·PHP·Ruby 등)
    + 영어 기능어(`that`, `is`, `the` — 주석과 `assertThat`·`isEmpty` 같은 이름에서 나옴). 더 뺄 단어는 `warnPriority.topics.extraStopwords`에 넣습니다.
 6. **파일별 비율**: 파일의 코드 줄 중 각 토픽에 속한 조각의 줄 비율입니다(합계 100%).
+
+### GPU 사용
+
+임베딩은 GPU에서 훨씬 빠릅니다. 스크립트는 PyTorch가 GPU를 쓸 수 있으면 자동으로 GPU(fp16)를 씁니다. 그런데 **PyPI의 Windows용 PyTorch는 CPU 전용**이라,
+그대로 설치하면 NVIDIA 그래픽카드가 있어도 CPU로 실행됩니다. 그래서 WarnPriority 전용 Python 환경은 이렇게 준비합니다.
+
+1. 실행할 때마다 `nvidia-smi`로 NVIDIA GPU와, 드라이버가 지원하는 CUDA 버전을 확인합니다.
+2. GPU가 있으면 PyTorch 공식 서버(`download.pytorch.org`)에서 **CUDA 빌드를 먼저** 설치하고, 그다음 나머지 패키지를 설치합니다(그래야 CPU 빌드로 덮어써지지 않음).
+   드라이버가 지원하는 것 중 가장 새 빌드부터 시도합니다(설치하는 Python 버전용이 없으면 다음 것):
+
+   | 빌드 | 필요한 드라이버 CUDA 버전 (`nvidia-smi`의 `CUDA Version`) | PyTorch |
+   | --- | --- | --- |
+   | cu134 | 13.4 이상 | 2.15 |
+   | cu132 | 13.2 이상 | 2.15 |
+   | cu130 | 13.0 이상 | 2.14 |
+   | cu126 | 12.6 이상 | 2.14 |
+   | cu118 | 11.8 이상 | 2.7 |
+
+3. **이미 CPU용 PyTorch가 설치된 환경**(0.10.0 이하에서 만든 환경 등)에서 GPU가 보이면, CPU 빌드를 지우고 CUDA 빌드(약 2~3 GB)로 바꿀지 묻습니다.
+   CUDA 빌드를 설치하지 못하면 CPU 빌드를 다시 넣어, 토픽 모델링은 CPU로 계속 동작합니다.
+4. `warnPriority.topics.pythonPath`로 **직접 지정한 Python은 건드리지 않습니다.** 그 PyTorch가 CPU 빌드면 경고만 띄웁니다. 직접 바꾸려면(Windows 예):
+
+   ```powershell
+   C:\path\to\python.exe -m pip uninstall -y torch
+   ```
+   ```powershell
+   C:\path\to\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu132
+   ```
+
+**GPU를 쓰는지 확인**: 출력 창(`WarnPriority`) 로그에 다음 줄이 보이면 됩니다. 완료 알림에도 임베딩을 GPU/CPU 중 어디서 계산했는지 나옵니다.
+
+```
+NVIDIA GPU: NVIDIA GeForce RTX 3070 Ti (driver supports CUDA 13.2)
+PyTorch 2.15.0+cu132 (CUDA 13.2), GPU available: True
+Embedding model nomic-ai/CodeRankEmbed on cuda:0
+```
+
+`GPU available: False`로 나오면 NVIDIA 드라이버를 업데이트하세요. WSL이나 원격(Remote) 환경에서 VS Code를 쓰면, 확장은 그쪽에서 실행되므로 그 환경에서 GPU가 보여야 합니다.
+
+- 이미 토픽 모델링한 결과 JSON은 저장해 둔 임베딩(`.topic-embeddings/`)을 다시 쓰므로 임베딩을 계산하지 않고, 위 두·세 번째 줄과 완료 알림의 GPU/CPU 표시도 나오지 않습니다.
+  GPU로 다시 계산하려면 그 폴더를 지우고 실행하세요.
+- Linux에서는 cu126 이상 빌드가 CUDA 라이브러리를 `pypi.nvidia.com`에서 함께 받으므로 그 주소에 접속할 수 있어야 합니다(Windows 빌드는 CUDA 라이브러리가 휠 하나에 들어 있어 필요 없음).
 
 ### 걸리는 시간
 임베딩 계산량은 코드 양에 비례합니다. **GPU(CUDA)나 Apple Silicon(MPS)이 있으면 자동으로 사용**하며 훨씬 빠릅니다.

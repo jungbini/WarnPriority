@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+- 토픽 모델링이 **NVIDIA GPU를 쓰도록** Python 환경 준비 방식 변경: `nvidia-smi`로 GPU와 드라이버의 CUDA 버전을 감지해,
+  PyTorch 공식 서버에서 **CUDA 빌드를 먼저 설치**한 뒤 나머지 패키지를 설치(PyPI의 Windows용 PyTorch는 CPU 전용이라 GPU가 있어도 CPU로 실행되던 문제).
+  드라이버가 지원하는 빌드 중 가장 새 것부터 시도(cu134 → cu132 → cu130 → cu126 → cu118)
+- 이미 만든 환경에 **CPU용 PyTorch가 있으면, 물어본 뒤 먼저 삭제하고** CUDA 빌드로 다시 설치. 실패하면 CPU 빌드를 되돌려 계속 동작
+- `warnPriority.topics.pythonPath`로 직접 지정한 Python은 바꾸지 않고, GPU가 있는데 PyTorch가 CPU 빌드면 경고
+- 로그에 감지한 GPU·PyTorch 빌드·임베딩 장치를 남기고, 완료 알림에 임베딩을 GPU/CPU 중 어디서 계산했는지 표시
+
 ## 0.10.0
 
 - 토픽 모델링에서 **테스트 파일 제외**(`warnPriority.topics.excludeTestFiles`, 기본 켜짐): 테스트 폴더(`test/`, `tests/`, `__tests__/`, `spec/`, `androidTest/` …)나

@@ -32,6 +32,8 @@ export type TopicProgress =
       outliers: number;
       /** Distinct chunks in the "Unclassified" column (0 when outliers were assigned to topics). */
       unclassifiedChunks: number;
+      /** Device the new embeddings were computed on ("cuda:0", "cpu", ...); null when all came from the cache. */
+      device: string | null;
       csv: string;
       keywordsCsv: string;
     };
@@ -115,24 +117,169 @@ async function requirementsHash(): Promise<string> {
   return createHash('sha256').update(await fs.readFile(TOPIC_REQUIREMENTS)).digest('hex').slice(0, 16);
 }
 
-/** Python of the managed environment if it is set up for the current requirements, else null. */
-export async function managedPython(storageDir: string): Promise<string | null> {
+/** What the environment's marker file records. */
+interface EnvMarker {
+  requirements: string;
+  /** "cuda" | "cpu", or "unknown" for environments created before 0.11.0. */
+  torch: 'cuda' | 'cpu' | 'unknown';
+}
+
+async function readMarker(venv: string): Promise<EnvMarker | null> {
+  const text = (await fs.readFile(path.join(venv, '.complete'), 'utf8').catch(() => '')).trim();
+  if (!text) {
+    return null;
+  }
+  try {
+    const m = JSON.parse(text) as EnvMarker;
+    return { requirements: m.requirements, torch: m.torch ?? 'unknown' };
+  } catch {
+    return { requirements: text, torch: 'unknown' }; // before 0.11.0 the marker held only the requirements hash
+  }
+}
+
+async function writeMarker(venv: string, torch: EnvMarker['torch']): Promise<void> {
+  const marker: EnvMarker = { requirements: await requirementsHash(), torch };
+  await fs.writeFile(path.join(venv, '.complete'), JSON.stringify(marker) + '\n');
+}
+
+export interface ManagedPython {
+  python: string;
+  torch: EnvMarker['torch'];
+}
+
+/** The managed environment if it is set up for the current requirements, else null. */
+export async function managedPython(storageDir: string): Promise<ManagedPython | null> {
   const venv = topicEnvDir(storageDir);
-  const marker = await fs.readFile(path.join(venv, '.complete'), 'utf8').catch(() => '');
-  return marker.trim() === (await requirementsHash()) && existsSync(venvPython(venv)) ? venvPython(venv) : null;
+  const marker = await readMarker(venv);
+  if (!marker || marker.requirements !== (await requirementsHash()) || !existsSync(venvPython(venv))) {
+    return null;
+  }
+  return { python: venvPython(venv), torch: marker.torch };
+}
+
+// --------------------------------------------------------------------------
+// GPU detection and PyTorch builds
+// --------------------------------------------------------------------------
+
+export interface GpuInfo {
+  name: string;
+  /** Highest CUDA version the installed NVIDIA driver supports, e.g. "13.2". */
+  cudaVersion: string;
+}
+
+/** An NVIDIA GPU with a working driver (via nvidia-smi), or null. */
+export async function detectNvidiaGpu(signal?: AbortSignal): Promise<GpuInfo | null> {
+  try {
+    let table = '';
+    let names = '';
+    const a = await runPython('nvidia-smi', [], { signal, onStdout: (l) => (table += l + '\n') });
+    const b = await runPython('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { signal, onStdout: (l) => (names += l + '\n') });
+    return a.code === 0 && b.code === 0 ? parseNvidiaSmi(table, names) : null;
+  } catch (e) {
+    if (e instanceof CancelledError) {
+      throw e;
+    }
+    return null; // no nvidia-smi: no NVIDIA driver
+  }
+}
+
+export function parseNvidiaSmi(table: string, names: string): GpuInfo | null {
+  const cuda = /CUDA Version:\s*(\d+\.\d+)/.exec(table);
+  const name = names.split(/\r?\n/).map((l) => l.trim()).find((l) => l);
+  return cuda && name ? { name, cudaVersion: cuda[1] } : null;
+}
+
+/** PyTorch's package index; CUDA builds are under <index>/<tag>. */
+export const PYTORCH_INDEX = 'https://download.pytorch.org/whl/';
+
+/**
+ * CUDA builds of PyTorch to try, newest first (each has Windows and Linux
+ * wheels): tag, CUDA version it needs, newest PyTorch it offers. Builds
+ * whose newest PyTorch is older than a later entry's are left out.
+ */
+export const CUDA_BUILDS: readonly { tag: string; cuda: string; torch: string }[] = [
+  { tag: 'cu134', cuda: '13.4', torch: '2.15' },
+  { tag: 'cu132', cuda: '13.2', torch: '2.15' },
+  { tag: 'cu130', cuda: '13.0', torch: '2.14' },
+  { tag: 'cu126', cuda: '12.6', torch: '2.14' },
+  { tag: 'cu118', cuda: '11.8', torch: '2.7' },
+];
+
+/** The CUDA builds a driver supporting `driverCuda` can run, in the order to try them. */
+export function cudaBuildsFor(driverCuda: string): string[] {
+  const v = (s: string) => s.split('.').map(Number);
+  const [dMajor, dMinor] = v(driverCuda);
+  return CUDA_BUILDS.filter((b) => {
+    const [major, minor] = v(b.cuda);
+    return major < dMajor || (major === dMajor && minor <= dMinor);
+  }).map((b) => b.tag);
+}
+
+export interface TorchInfo {
+  version: string;
+  /** CUDA version PyTorch was built with; null for a CPU build. */
+  cuda: string | null;
+  gpuAvailable: boolean;
+}
+
+/** The PyTorch installed in `python`, or null when there is none. */
+export async function torchInfo(python: string, signal?: AbortSignal): Promise<TorchInfo | null> {
+  let out = '';
+  const { code } = await runPython(
+    python,
+    ['-c', 'import json, torch; print(json.dumps({"version": torch.__version__, "cuda": torch.version.cuda, "gpuAvailable": torch.cuda.is_available()}))'],
+    { signal, onStdout: (l) => (out += l) },
+  );
+  if (code !== 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(out) as TorchInfo;
+  } catch {
+    return null;
+  }
+}
+
+export function describeTorch(t: TorchInfo | null): string {
+  return t ? `PyTorch ${t.version} (${t.cuda ? `CUDA ${t.cuda}` : 'CPU build'}${t.gpuAvailable ? ', GPU available' : ''})` : 'no PyTorch';
+}
+
+/** Installs the newest CUDA build the driver supports; returns its tag, or null if none could be installed. */
+async function installCudaTorch(python: string, gpu: GpuInfo, opts: SetupOptions): Promise<string | null> {
+  const builds = cudaBuildsFor(gpu.cudaVersion);
+  if (builds.length === 0) {
+    opts.log?.(`WARNING: the NVIDIA driver supports CUDA ${gpu.cudaVersion}; PyTorch's CUDA builds need 11.8 or newer. Update the driver to use the GPU.`);
+    return null;
+  }
+  for (const tag of builds) {
+    opts.log?.(`Installing the PyTorch CUDA build ${tag} for ${gpu.name} (driver CUDA ${gpu.cudaVersion})`);
+    // Only PyTorch's index: with PyPI as an extra index, pip could prefer a newer CPU build from PyPI.
+    const { code } = await runPython(python, ['-m', 'pip', 'install', 'torch', '--index-url', PYTORCH_INDEX + tag], {
+      signal: opts.signal,
+      onStdout: opts.log,
+      onStderr: opts.log,
+    });
+    if (code === 0) {
+      return tag;
+    }
+    opts.log?.(`PyTorch build ${tag} could not be installed (e.g. none for this Python version); trying the next one`);
+  }
+  return null;
 }
 
 export interface SetupOptions {
   signal?: AbortSignal;
   log?: (line: string) => void;
-  onStep?: (step: 'venv' | 'packages') => void;
+  onStep?: (step: 'venv' | 'torch' | 'packages') => void;
 }
 
 /**
- * Creates <storage>/python-topics (a virtual environment) and installs
- * requirements.txt into it. Needs Python 3.9+ on the machine.
+ * Creates <storage>/python-topics (a virtual environment) and installs the
+ * packages. With an NVIDIA GPU, PyTorch's CUDA build is installed first (the
+ * PyTorch on PyPI is CPU-only on Windows), then requirements.txt, which then
+ * keeps that PyTorch. Needs Python 3.9+ on the machine.
  */
-export async function setupManagedPython(storageDir: string, opts: SetupOptions = {}): Promise<string> {
+export async function setupManagedPython(storageDir: string, gpu: GpuInfo | null, opts: SetupOptions = {}): Promise<string> {
   const base = await findBasePython(opts.signal);
   opts.log?.(`Using ${base.description} to create the environment`);
   const venv = topicEnvDir(storageDir);
@@ -142,13 +289,53 @@ export async function setupManagedPython(storageDir: string, opts: SetupOptions 
   opts.onStep?.('venv');
   await check(runPython(base.command, [...base.args, '-m', 'venv', venv], { signal: opts.signal, onStdout: opts.log, onStderr: opts.log }), 'Creating the Python environment');
   const python = venvPython(venv);
-  opts.onStep?.('packages');
   await check(runPython(python, ['-m', 'pip', 'install', '--upgrade', 'pip'], { signal: opts.signal, onStdout: opts.log, onStderr: opts.log }), 'Updating pip');
+  if (gpu) {
+    opts.onStep?.('torch');
+    await installCudaTorch(python, gpu, opts);
+  }
+  opts.onStep?.('packages');
+  await installRequirements(python, opts);
+  return finish(venv, python, opts);
+}
+
+/**
+ * Replaces the CPU build of PyTorch in the managed environment with the CUDA
+ * build: the CPU build is uninstalled first. If no CUDA build can be
+ * installed, the CPU build is put back so the environment keeps working.
+ */
+export async function switchManagedTorchToCuda(storageDir: string, gpu: GpuInfo, opts: SetupOptions = {}): Promise<TorchInfo | null> {
+  const venv = topicEnvDir(storageDir);
+  const python = venvPython(venv);
+  opts.onStep?.('torch');
+  opts.log?.('Uninstalling the CPU build of PyTorch');
+  await check(runPython(python, ['-m', 'pip', 'uninstall', '-y', 'torch'], { signal: opts.signal, onStdout: opts.log, onStderr: opts.log }), 'Uninstalling PyTorch');
+  const tag = await installCudaTorch(python, gpu, opts);
+  if (!tag) {
+    opts.log?.('WARNING: no CUDA build of PyTorch could be installed; putting the CPU build back');
+  }
+  opts.onStep?.('packages');
+  await installRequirements(python, opts); // reinstalls the CPU build if needed; otherwise keeps the CUDA build
+  await finish(venv, python, opts);
+  return torchInfo(python, opts.signal);
+}
+
+/** Records the PyTorch build of an existing environment (e.g. one created before 0.11.0). */
+export async function recordManagedTorch(storageDir: string, info: TorchInfo | null): Promise<void> {
+  await writeMarker(topicEnvDir(storageDir), info?.cuda ? 'cuda' : info ? 'cpu' : 'unknown');
+}
+
+async function installRequirements(python: string, opts: SetupOptions): Promise<void> {
   await check(
     runPython(python, ['-m', 'pip', 'install', '-r', TOPIC_REQUIREMENTS], { signal: opts.signal, onStdout: opts.log, onStderr: opts.log }),
     'Installing the topic modeling packages',
   );
-  await fs.writeFile(path.join(venv, '.complete'), (await requirementsHash()) + '\n');
+}
+
+async function finish(venv: string, python: string, opts: SetupOptions): Promise<string> {
+  const info = await torchInfo(python, opts.signal);
+  opts.log?.(`Environment ready: ${describeTorch(info)}`);
+  await writeMarker(venv, info?.cuda ? 'cuda' : 'cpu');
   return python;
 }
 

@@ -8,7 +8,20 @@ import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { downloadSize, installPmd, locatePmd, PmdLocation } from './core/pmdInstaller';
 import { ALL_RULES } from './core/pmdRunner';
-import { DEFAULT_EMBEDDING_MODEL, managedPython, runTopicModel, setupManagedPython, TopicProgress, TopicResult } from './core/topics';
+import {
+  DEFAULT_EMBEDDING_MODEL,
+  describeTorch,
+  detectNvidiaGpu,
+  managedPython,
+  recordManagedTorch,
+  runTopicModel,
+  SetupOptions,
+  setupManagedPython,
+  switchManagedTorchToCuda,
+  TopicProgress,
+  TopicResult,
+  torchInfo,
+} from './core/topics';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -614,20 +627,76 @@ async function runTopicsCommand(context: vscode.ExtensionContext, output: vscode
   }
 }
 
-/** warnPriority.topics.pythonPath, or the extension's own environment (created after asking). */
+/**
+ * warnPriority.topics.pythonPath, or the extension's own environment (created after asking).
+ * With an NVIDIA GPU the own environment gets PyTorch's CUDA build; a CPU build already in it is
+ * uninstalled and replaced (after asking). A configured Python is never changed, only checked.
+ */
 async function ensureTopicPython(context: vscode.ExtensionContext, config: vscode.WorkspaceConfiguration, output: vscode.OutputChannel): Promise<string | undefined> {
+  const gpu = await detectNvidiaGpu();
+  output.appendLine(gpu ? `NVIDIA GPU: ${gpu.name} (driver supports CUDA ${gpu.cudaVersion})` : 'No NVIDIA GPU found (nvidia-smi is not available)');
+
   const configured = config.get<string>('topics.pythonPath', '').trim();
   if (configured) {
+    if (gpu) {
+      const info = await torchInfo(configured);
+      output.appendLine(`warnPriority.topics.pythonPath: ${describeTorch(info)}`);
+      if (info && !info.cuda) {
+        vscode.window.showWarningMessage(
+          vscode.l10n.t(
+            'An NVIDIA GPU ({0}) was found, but the PyTorch of warnPriority.topics.pythonPath is a CPU build, so embeddings are computed on the CPU. Install the CUDA build of PyTorch in that Python (see the README).',
+            gpu.name,
+          ),
+        );
+      }
+    }
     return configured;
   }
+
   const storageDir = context.globalStorageUri.fsPath;
-  const ready = await managedPython(storageDir);
-  if (ready) {
-    return ready;
+  const managed = await managedPython(storageDir);
+  if (managed) {
+    if (!gpu || managed.torch === 'cuda') {
+      return managed.python;
+    }
+    const info = await torchInfo(managed.python);
+    output.appendLine(`WarnPriority Python environment: ${describeTorch(info)}`);
+    if (info?.cuda) {
+      await recordManagedTorch(storageDir, info);
+      return managed.python;
+    }
+    const install = vscode.l10n.t('Install CUDA Build');
+    const choice = await vscode.window.showInformationMessage(
+      vscode.l10n.t(
+        'An NVIDIA GPU ({0}) was found, but the installed PyTorch is a CPU build, so CodeRankEmbed runs on the CPU. Remove the CPU build and install the CUDA build of PyTorch (about 2-3 GB)?',
+        gpu.name,
+      ),
+      { modal: true },
+      install,
+    );
+    if (choice !== install) {
+      if (!info) {
+        return undefined; // PyTorch is missing (e.g. an interrupted switch): nothing to run with
+      }
+      output.appendLine('Continuing with the CPU build of PyTorch');
+      return managed.python;
+    }
+    output.show(true);
+    const after = await withSetupProgress(vscode.l10n.t('Switching PyTorch to the CUDA build'), (opts) => switchManagedTorchToCuda(storageDir, gpu, opts), output);
+    if (!after?.cuda) {
+      vscode.window.showWarningMessage(vscode.l10n.t('The CUDA build of PyTorch could not be installed, so topic modeling continues on the CPU. See the WarnPriority log.'));
+    }
+    return managed.python;
   }
+
   const install = vscode.l10n.t('Install');
   const choice = await vscode.window.showInformationMessage(
-    vscode.l10n.t('Topic modeling needs Python packages (BERTopic, sentence-transformers, PyTorch; about 1-4 GB). Create a Python environment for WarnPriority and install them now?'),
+    gpu
+      ? vscode.l10n.t(
+          'Topic modeling needs Python packages (BERTopic, sentence-transformers and the CUDA build of PyTorch for your {0}; about 3-5 GB). Create a Python environment for WarnPriority and install them now?',
+          gpu.name,
+        )
+      : vscode.l10n.t('Topic modeling needs Python packages (BERTopic, sentence-transformers, PyTorch; about 1-4 GB). Create a Python environment for WarnPriority and install them now?'),
     { modal: true },
     install,
   );
@@ -635,28 +704,32 @@ async function ensureTopicPython(context: vscode.ExtensionContext, config: vscod
     return undefined;
   }
   output.show(true);
-  return vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Setting up Python for topic modeling'), cancellable: true },
-    async (progress, token) => {
-      const controller = new AbortController();
-      const sub = token.onCancellationRequested(() => controller.abort());
-      try {
-        return await setupManagedPython(storageDir, {
-          signal: controller.signal,
-          log: (l) => output.appendLine(l),
-          onStep: (step) =>
-            progress.report({
-              message:
-                step === 'venv'
-                  ? vscode.l10n.t('Creating the Python environment...')
-                  : vscode.l10n.t('Installing BERTopic, sentence-transformers and PyTorch (this can take several minutes)...'),
-            }),
-        });
-      } finally {
-        sub.dispose();
-      }
-    },
-  );
+  return withSetupProgress(vscode.l10n.t('Setting up Python for topic modeling'), (opts) => setupManagedPython(storageDir, gpu, opts), output);
+}
+
+/** Runs a Python environment setup step with a cancellable progress notification. */
+function withSetupProgress<T>(title: string, run: (opts: SetupOptions) => Promise<T>, output: vscode.OutputChannel): Thenable<T> {
+  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (progress, token) => {
+    const controller = new AbortController();
+    const sub = token.onCancellationRequested(() => controller.abort());
+    try {
+      return await run({
+        signal: controller.signal,
+        log: (l) => output.appendLine(l),
+        onStep: (step) =>
+          progress.report({
+            message:
+              step === 'venv'
+                ? vscode.l10n.t('Creating the Python environment...')
+                : step === 'torch'
+                  ? vscode.l10n.t('Installing PyTorch with CUDA support (about 2-3 GB, this can take several minutes)...')
+                  : vscode.l10n.t('Installing BERTopic, sentence-transformers and the other packages (this can take several minutes)...'),
+          }),
+      });
+    } finally {
+      sub.dispose();
+    }
+  });
 }
 
 async function showTopicResult(result: TopicResult, output: vscode.OutputChannel): Promise<void> {
@@ -673,6 +746,13 @@ async function showTopicResult(result: TopicResult, output: vscode.OutputChannel
   }
   if (result.unclassifiedChunks > 0) {
     text += ' ' + vscode.l10n.t('Code that belongs to no topic is in the "Unclassified" column.');
+  }
+  if (result.device) {
+    text +=
+      ' ' +
+      (result.device.startsWith('cuda')
+        ? vscode.l10n.t('Embeddings were computed on the GPU ({0}).', result.device)
+        : vscode.l10n.t('Embeddings were computed on the CPU.'));
   }
   const choice = await vscode.window.showInformationMessage(text, keywords, reveal);
   if (choice === keywords) {

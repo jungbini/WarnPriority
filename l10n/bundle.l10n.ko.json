@@ -51,9 +51,18 @@
   "Topic modeling needs Python packages (BERTopic, sentence-transformers, PyTorch; about 1-4 GB). Create a Python environment for WarnPriority and install them now?": "토픽 모델링에는 Python 패키지(BERTopic, sentence-transformers, PyTorch; 약 1~4 GB)가 필요합니다. WarnPriority 전용 Python 환경을 만들어 지금 설치할까요?",
   "Setting up Python for topic modeling": "토픽 모델링용 Python 준비 중",
   "Creating the Python environment...": "Python 환경 만드는 중...",
-  "Installing BERTopic, sentence-transformers and PyTorch (this can take several minutes)...": "BERTopic, sentence-transformers, PyTorch 설치 중(몇 분 걸릴 수 있음)...",
   "Show Keywords": "키워드 보기",
   "Found {0} topics. Saved the topic shares of {1} before files to {2}.": "토픽 {0}개를 찾았습니다. 수정 전 파일 {1}개의 토픽 비율을 {2}에 저장했습니다.",
   "{0} test files were left out.": "테스트 파일 {0}개는 제외했습니다.",
-  "Code that belongs to no topic is in the \"Unclassified\" column.": "어느 토픽에도 속하지 않은 코드는 마지막 \"Unclassified\" 열에 있습니다."
+  "Code that belongs to no topic is in the \"Unclassified\" column.": "어느 토픽에도 속하지 않은 코드는 마지막 \"Unclassified\" 열에 있습니다.",
+  "An NVIDIA GPU ({0}) was found, but the PyTorch of warnPriority.topics.pythonPath is a CPU build, so embeddings are computed on the CPU. Install the CUDA build of PyTorch in that Python (see the README).": "NVIDIA GPU({0})가 있지만 warnPriority.topics.pythonPath에 지정한 Python의 PyTorch가 CPU용이라 임베딩을 CPU로 계산합니다. 그 Python에 PyTorch CUDA 빌드를 설치하세요(README 참고).",
+  "Install CUDA Build": "CUDA 빌드 설치",
+  "An NVIDIA GPU ({0}) was found, but the installed PyTorch is a CPU build, so CodeRankEmbed runs on the CPU. Remove the CPU build and install the CUDA build of PyTorch (about 2-3 GB)?": "NVIDIA GPU({0})가 있지만 설치된 PyTorch가 CPU용이라 CodeRankEmbed가 CPU로 실행됩니다. CPU용 PyTorch를 삭제하고 CUDA 빌드(약 2~3 GB)를 설치할까요?",
+  "Switching PyTorch to the CUDA build": "PyTorch를 CUDA 빌드로 바꾸는 중",
+  "The CUDA build of PyTorch could not be installed, so topic modeling continues on the CPU. See the WarnPriority log.": "PyTorch CUDA 빌드를 설치하지 못해 CPU로 계속 진행합니다. WarnPriority 로그를 확인하세요.",
+  "Topic modeling needs Python packages (BERTopic, sentence-transformers and the CUDA build of PyTorch for your {0}; about 3-5 GB). Create a Python environment for WarnPriority and install them now?": "토픽 모델링에는 Python 패키지(BERTopic, sentence-transformers, {0}용 PyTorch CUDA 빌드; 약 3~5 GB)가 필요합니다. WarnPriority 전용 Python 환경을 만들어 지금 설치할까요?",
+  "Installing PyTorch with CUDA support (about 2-3 GB, this can take several minutes)...": "CUDA를 지원하는 PyTorch 설치 중(약 2~3 GB, 몇 분 걸릴 수 있음)...",
+  "Installing BERTopic, sentence-transformers and the other packages (this can take several minutes)...": "BERTopic, sentence-transformers 등 나머지 패키지 설치 중(몇 분 걸릴 수 있음)...",
+  "Embeddings were computed on the GPU ({0}).": "임베딩은 GPU({0})로 계산했습니다.",
+  "Embeddings were computed on the CPU.": "임베딩은 CPU로 계산했습니다."
 }

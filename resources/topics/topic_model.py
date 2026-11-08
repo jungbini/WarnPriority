@@ -402,16 +402,22 @@ def main(argv: Optional[List[str]] = None) -> int:
             cached = dict(zip(z['keys'].tolist(), z['embeddings']))
     missing = [i for i, k in enumerate(keys) if k not in cached]
     log(f'{len(docs) - len(missing)} chunk embeddings cached, {len(missing)} to compute')
+    device: Optional[str] = None
 
     if missing:
+        import torch
         from sentence_transformers import SentenceTransformer
+
+        log(f'PyTorch {torch.__version__} ({"CUDA " + torch.version.cuda if torch.version.cuda else "CPU build"}), '
+            f'GPU available: {torch.cuda.is_available()}')
 
         progress('model', model=args.model)
         model = SentenceTransformer(args.model, trust_remote_code=True, device=args.device)
         model.max_seq_length = args.max_seq_length
         if model.device.type == 'cuda':
             model.half()  # fp16 roughly halves embedding time on GPUs; CPUs stay in fp32
-        log(f'Embedding model {args.model} on {model.device}')
+        device = str(model.device)
+        log(f'Embedding model {args.model} on {device}')
         step = max(args.batch_size * 8, 64)
         os.makedirs(cache_dir, exist_ok=True)
         for start in range(0, len(missing), step):
@@ -486,7 +492,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     unclassified = sum(1 for x in topics if x == UNCLASSIFIED)
     progress('done', topics=len(found), files=len(files), testFiles=skipped_tests, chunks=len(chunk_keys),
-             uniqueChunks=len(docs), outliers=outliers, unclassifiedChunks=unclassified, csv=out_csv, keywordsCsv=keywords_csv)
+             uniqueChunks=len(docs), outliers=outliers, unclassifiedChunks=unclassified, device=device, csv=out_csv,
+             keywordsCsv=keywords_csv)
     return 0
 
 
