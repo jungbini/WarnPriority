@@ -1,40 +1,76 @@
 # WarnPriority
 
-GitHub 저장소의 커밋 이력에서 **커밋 메시지에 특정 키워드가 들어간 커밋**을 찾아, 그 커밋에서 **추가·삭제·수정된 줄 번호**를 JSON으로 저장하고, 바뀐 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 두는 VS Code 확장입니다.
-수정 전/후 파일에 정적 분석기를 돌린 뒤, JSON의 줄 번호를 기준으로 warning이 어떻게 바뀌었는지 비교하는 데 쓰도록 만들었습니다.
+GitHub 저장소의 커밋 이력에서 정적 분석 warning의 변화를 연구하기 위한 VS Code 확장입니다. 세 단계로 씁니다.
+
+1. **변경 코드 수집** — 커밋 메시지에 키워드(예: `fix, bug`)가 들어간 커밋을 찾아, 바뀐 **줄 번호**를 JSON으로 저장하고 바뀐 소스 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 둡니다.
+2. **PMD 분석** — 수정 전/후 파일에 PMD(Java 규칙 전체)를 실행해, 커밋으로 **사라진 warning과 새로 생긴 warning**을 기록합니다.
+3. **토픽 모델링** — 수정 전 소스 코드 전체를 CodeRankEmbed + BERTopic으로 토픽 모델링해, **파일별 기능(토픽) 비율**을 CSV로 정리합니다.
 
 ## 설치
 
 [Releases](https://github.com/jungbini/WarnPriority/releases)에서 최신 `warnpriority-<버전>.vsix`를 내려받아,
 VS Code 확장(Extensions) 보기 → `···` → **VSIX에서 설치(Install from VSIX...)** 로 설치합니다.
-(Git이 설치되어 있어야 합니다.)
 새 버전을 설치한 뒤에는 VS Code 창을 다시 로드(명령 팔레트 → `Developer: Reload Window`)해야 새 버전이 실행됩니다.
 실행 중인 버전은 출력 창(`WarnPriority`) 로그의 `WarnPriority v<버전>`에서 확인할 수 있습니다.
 
+| 기능 | 필요한 것 | 처음 사용할 때 |
+| --- | --- | --- |
+| 변경 코드 수집 | [Git](https://git-scm.com/) | — |
+| PMD 분석 | Java 8 이상 | PMD 7.29.0(약 13 MB)을 내려받을지 묻습니다 |
+| 토픽 모델링 | Python 3.9 이상 | 전용 Python 환경에 BERTopic·sentence-transformers·PyTorch(약 1~4 GB)를 설치할지 묻고, 첫 실행 때 CodeRankEmbed 모델(약 550 MB)을 내려받습니다 |
+
 ## 사용법
 
-1. 명령 팔레트(`Ctrl+Shift+P` / `Cmd+Shift+P`)에서 **`WarnPriority: GitHub 커밋에서 변경된 코드 수집`**
-   (영문 UI: `WarnPriority: Collect Changed Code from GitHub Commits`)을 실행합니다.
-2. **GitHub 주소**를 입력합니다. 예: `https://github.com/google/gson`
-3. **커밋 메시지 키워드**를 입력합니다. 예: `fix, bug`
-4. 진행 상황이 알림으로 표시되고(취소 가능), 완료되면 결과 파일이 **VS Code 에디터에서 자동으로 열립니다.**
+모든 명령은 명령 팔레트(`Ctrl+Shift+P` / `Cmd+Shift+P`)에서 `WarnPriority`를 입력하면 나옵니다.
 
-결과는 기본적으로 `<워크스페이스>/warnpriority-output/` 아래, 저장소별 폴더에 저장됩니다(열린 폴더가 없으면 저장할 폴더를 묻습니다).
+| 단계 | 명령 (한국어 UI) | 영문 UI | 결과 |
+| --- | --- | --- | --- |
+| 1 | `GitHub 커밋에서 변경된 코드 수집` | `Collect Changed Code from GitHub Commits` | `<결과>.json` + 커밋별 `before/`·`after/` 폴더 |
+| 2 | `수집 결과를 PMD로 분석` | `Analyze Collected Results with PMD` | `<결과>.pmd.json` |
+| 3 | `수정 전 코드 토픽 모델링 (BERTopic)` | `Topic Modeling of Before Files (BERTopic)` | `<결과>.topics.csv`, `<결과>.topic-keywords.csv` |
+| — | `캐시된 저장소 복제본 삭제` | `Clear Cached Repository Clones` | 내려받아 둔 저장소 삭제 |
+
+### 1. 변경 코드 수집
+
+1. **`WarnPriority: GitHub 커밋에서 변경된 코드 수집`**을 실행합니다.
+2. **GitHub 주소**를 입력합니다. 예: `https://github.com/google/gson`
+3. **커밋 메시지 키워드**를 입력합니다. 예: `fix, bug` (비워 두면 모든 커밋)
+4. 진행 상황이 알림으로 표시되고(취소 가능), 완료되면 결과 JSON이 **에디터에서 자동으로 열립니다.**
+   완료 알림의 **PMD로 분석** 버튼을 누르면 바로 2단계로 넘어갑니다.
+
+### 2. PMD로 warning 변화 분석
+
+- 1단계 완료 알림의 **PMD로 분석** 버튼, 또는 **`WarnPriority: 수집 결과를 PMD로 분석`** 실행(결과 JSON 선택), 또는 탐색기에서 결과 JSON 우클릭.
+- 결과 `<결과>.pmd.json`이 열립니다. 형식과 비교 기준은 [PMD로 warning 변화 분석](#pmd로-warning-변화-분석)을 보세요.
+
+### 3. 수정 전 코드 토픽 모델링
+
+- **`WarnPriority: 수정 전 코드 토픽 모델링 (BERTopic)`** 실행(결과 JSON 선택), 또는 탐색기에서 결과 JSON 우클릭.
+- 결과 `<결과>.topics.csv`가 열리고, 알림의 **키워드 보기**로 토픽별 키워드를 볼 수 있습니다. 자세한 내용은 [수정 전 코드 토픽 모델링](#수정-전-코드-토픽-모델링-bertopic)을 보세요.
+
+### 결과 폴더
+
+결과는 기본적으로 `<워크스페이스>/warnpriority-output/` 아래, 저장소별 폴더에 저장됩니다(열린 폴더가 없으면 저장할 폴더를 묻습니다. 위치는 `warnPriority.outputDirectory`로 바꿀 수 있음).
 
 ```
 warnpriority-output/
-├─ .gitignore                                   ← 결과가 git 변경 목록에 뜨지 않도록 자동 생성
-└─ google_gson/                                 ← 저장소(프로젝트)별 폴더
-   ├─ google_gson_fix-bug_20261107-104155.json  ← 커밋 목록 + 줄 번호
-   ├─ 094f5003ce5f6d2fb65457bee9c78b9d53d25308/ ← 커밋 해시 폴더
+├─ .gitignore                                       ← 결과가 git 변경 목록에 뜨지 않도록 자동 생성
+└─ google_gson/                                     ← 저장소(프로젝트)별 폴더
+   ├─ google_gson_fix-bug_20261107-104155.json      ← 1단계: 커밋 목록 + 바뀐 줄 번호
+   ├─ google_gson_fix-bug_20261107-104155.pmd.json  ← 2단계: 커밋별 사라진/생긴 warning
+   ├─ google_gson_fix-bug_20261107-104155.topics.csv          ← 3단계: 파일별 토픽 비율(%)
+   ├─ google_gson_fix-bug_20261107-104155.topic-keywords.csv  ← 3단계: 토픽별 키워드
+   ├─ .topic-embeddings/                            ← 3단계 임베딩 캐시
+   ├─ 094f5003ce5f6d2fb65457bee9c78b9d53d25308/     ← 커밋 해시 폴더
    │  ├─ before/gson/src/main/java/com/google/gson/Gson.java   ← 수정 전 (parent 시점)
    │  └─ after/gson/src/main/java/com/google/gson/Gson.java    ← 수정 후 (커밋 시점)
    └─ …
 ```
 
-- `before/`, `after/` 아래는 저장소 안의 경로를 그대로 따릅니다. 바뀐 파일만 저장합니다(프로젝트 전체가 아님).
+- `before/`, `after/` 아래는 저장소 안의 경로를 그대로 따릅니다. 바뀐 소스 파일만 저장합니다(프로젝트 전체가 아님).
 - 새로 추가된 파일은 `after/`에만, 삭제된 파일은 `before/`에만 있습니다. 이름이 바뀐 파일은 `before/`에 옛 경로(`oldFile`)로 저장됩니다.
 - 같은 저장소를 다른 키워드로 다시 수집하면 같은 커밋 폴더를 그대로 덮어씁니다(내용은 동일).
+- 모든 단계는 CLI로도 실행할 수 있습니다([개발](#개발) 참고).
 
 ### 입력 가능한 주소 형식
 
@@ -199,10 +235,17 @@ File Name,Topic #1 (reader, begin, malformed, column, writer),Topic #2 (peeked, 
 6. **파일별 비율**: 파일의 코드 줄 중 각 토픽에 속한 조각의 줄 비율입니다(합계 100%).
 
 ### 걸리는 시간
-임베딩 계산량은 코드 양에 비례합니다. **GPU(CUDA)나 Apple Silicon(MPS)이 있으면 자동으로 사용**하며 몇 분이면 끝납니다.
-CPU만 쓰면 오래 걸립니다(4코어 CPU 기준 google/gson `fix, bug` 일부 60개 커밋·수정 전 파일 373개: 약 16분, 전체 380개 커밋: 약 1시간).
+임베딩 계산량은 코드 양에 비례합니다. **GPU(CUDA)나 Apple Silicon(MPS)이 있으면 자동으로 사용**하며 훨씬 빠릅니다.
+CPU만 쓰면 오래 걸립니다. 4코어 CPU에서 측정한 값:
+
+| 대상 | 서로 다른 코드 조각 | 첫 실행 | 다시 실행(임베딩 캐시 사용) |
+| --- | --- | --- | --- |
+| google/gson `fix, bug` 중 최근 60개 커밋(수정 전 파일 373개) | 약 3,400개 | 약 16분 | 약 30초 |
+
+CPU에서는 대략 서로 다른 코드 조각 3,400개에 16분 정도이므로, 수집한 커밋이 많으면 그에 비례해 늘어납니다(시작할 때 출력 창 로그에 조각 수가 나옵니다).
 진행 상황은 알림에 표시되고 언제든 취소할 수 있으며, 그때까지 계산한 임베딩은 캐시에 남아 다음 실행에 이어서 씁니다.
 
+## 설정
 
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
