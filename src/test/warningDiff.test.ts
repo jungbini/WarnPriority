@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert';
 import { test } from 'node:test';
-import { countLines, diffWarnings, RuleWarningCounts, Warning, warningRemovalRate } from '../core/warningDiff';
+import { countLines, diffWarnings, messageIdentity, RuleWarningCounts, Warning, warningRemovalRate } from '../core/warningDiff';
 
 function w(rule: string, line: number, message = `${rule} message`, endLine = line): Warning {
   return { rule, ruleset: 'Best Practices', priority: 3, line, endLine, message };
@@ -114,6 +114,80 @@ test('a warning enclosing lines that were only added or only deleted is in the c
   const deleted = diffWarnings([w('Method', 2, 'm', 9), w('Later', 10)], [w('Method', 2, 'm', 7), w('Later', 8), w('New', 3, 'n', 6)], [{ before: [5, 6], after: [] }], 12, 10);
   assert.deepEqual(counts(deleted.rules), { Method: [1, 1, 0, 0, 0], New: [0, 1, 0, 1, null] });
   assert.deepEqual(brief(deleted.added), [['New', 3, true]]);
+});
+
+test('a warning the commit only moved is unchanged when its message names the same thing', () => {
+  const literal = (text: string, n: number, first: number) => `The String literal "${text}" appears ${n} times in this file; the first occurrence is on line ${first}`;
+  // A new use of "yyyy" above its first occurrence moves the warning into the added lines.
+  const r = diffWarnings(
+    [w('AvoidDuplicateLiterals', 19, literal('yyyy', 4, 19)), w('AvoidDuplicateLiterals', 30, literal('1.5', 3, 30))],
+    [w('AvoidDuplicateLiterals', 6, literal('yyyy', 5, 6)), w('AvoidDuplicateLiterals', 8, literal('1.0', 3, 8))],
+    [{ before: [], after: [5, 6, 7, 8] }],
+    40,
+    44,
+  );
+  assert.equal(r.unchanged, 1);
+  assert.deepEqual(brief(r.removed), [['AvoidDuplicateLiterals', 30, false]]); // "1.5" is not "1.0": numbers in quotes count
+  assert.deepEqual(brief(r.added), [['AvoidDuplicateLiterals', 8, true]]);
+  assert.deepEqual(counts(r.rules), { AvoidDuplicateLiterals: [1, 2, 0, 1, -1] });
+});
+
+test('a moved warning is not paired when its message names nothing or is not unique', () => {
+  const comment = 'Public method and constructor comments are required';
+  const generic = diffWarnings([w('CommentRequired', 30, comment)], [w('CommentRequired', 6, comment)], [{ before: [], after: [5, 6] }], 40, 42);
+  assert.equal(generic.unchanged, 0);
+  const param = "Parameter 'src' is not assigned and could be declared final";
+  const twice = diffWarnings([w('MethodArgumentCouldBeFinal', 30, param)], [w('MethodArgumentCouldBeFinal', 6, param), w('MethodArgumentCouldBeFinal', 7, param)], [{ before: [], after: [5, 6, 7] }], 40, 43);
+  assert.equal(twice.unchanged, 0);
+});
+
+test('a multi-line warning whose lines overlap after the commit is unchanged', () => {
+  // An import added at line 3: the import list warning now starts on the added line.
+  const r = diffWarnings([w('ExcessiveImports', 3, 'imports (31)', 40)], [w('ExcessiveImports', 3, 'imports (32)', 41)], [{ before: [], after: [3] }], 100, 101);
+  assert.equal(r.unchanged, 1);
+  assert.deepEqual(counts(r.rules), { ExcessiveImports: [1, 1, 0, 0, 0] });
+});
+
+test('messageIdentity keeps quoted names and drops other numbers', () => {
+  assert.equal(messageIdentity('The String literal "1.5" appears 4 times; first on line 398'), 'The String literal "1.5" appears # times; first on line #');
+  assert.equal(messageIdentity("The method 'f(int)' has a cyclomatic complexity of 10."), "The method 'f(int)' has a cyclomatic complexity of #.");
+  assert.equal(messageIdentity('Field comments are required'), null);
+});
+
+test('a warning removed or added right below changed code is in the changed code', () => {
+  const before = ['class A {', '  int x;', '', '  /*', '   * Old comment', '   */', '  public void f() {}', '  public void g() {}', '}', ''].join('\n');
+  const after = ['class A {', '  int x;', '', '  /**', '   * Old comment', '   */', '  public void f() {}', '  /** New. */', '  public void g() {}', '}', ''].join('\n');
+  const missing = (line: number) => w('CommentRequired', line, 'Public method and constructor comments are required');
+  // Line 4 "/*" became "/**" (comment lines 5-6 between it and f), and a Javadoc was added above g.
+  const r = diffWarnings([missing(7), missing(8), w('Field', 2)], [w('Field', 2)], [{ before: [4], after: [4] }, { before: [], after: [8] }], 9, 10, { before, after });
+  assert.deepEqual(brief(r.removed), [
+    ['CommentRequired', 7, true],
+    ['CommentRequired', 8, true],
+  ]);
+  assert.deepEqual(counts(r.rules), { CommentRequired: [2, 0, 2, 0, 1] });
+  // Without the text, only the line right above counts.
+  assert.deepEqual(brief(diffWarnings([missing(7), missing(8)], [], [{ before: [4], after: [4] }, { before: [], after: [8] }], 9, 10).removed), [
+    ['CommentRequired', 7, false],
+    ['CommentRequired', 8, true],
+  ]);
+});
+
+test('right below changed code: blank and code lines stop it, and a warning that stays is not counted', () => {
+  const text = ['void f() {', '  a();', '  int x = 1;', '', '  int y = 2;', '  b();', '}', ''].join('\n');
+  const r = diffWarnings(
+    [w('Gone', 3), w('BlankBetween', 5), w('Stays', 3, 'stays')],
+    [w('Stays', 3, 'stays'), w('New', 3)],
+    [{ before: [2], after: [2] }],
+    7,
+    7,
+    { before: text, after: text },
+  );
+  assert.deepEqual(brief(r.removed), [
+    ['Gone', 3, true], // a statement right above it changed
+    ['BlankBetween', 5, false],
+  ]);
+  assert.deepEqual(brief(r.added), [['New', 3, true]]);
+  assert.deepEqual(counts(r.rules), { Gone: [1, 0, 1, 0, 1], New: [0, 1, 0, 1, null] });
 });
 
 test('warningRemovalRate', () => {

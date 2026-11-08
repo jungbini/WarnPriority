@@ -67,9 +67,19 @@ export function warningRemovalRate(before: number, after: number): number | null
  *  - on an unchanged line: the line it moved to (unchanged lines keep their
  *    order, so the k-th unchanged line before is the k-th unchanged line after);
  *  - on a changed line: anywhere in the same change block.
- * Same rule and same message is preferred over same rule only.
+ * Same rule and same message is preferred over same rule only. Warnings left
+ * over are matched when the commit only moved them (see matchMoved).
+ *
+ * A warning is in the changed code when its lines include a changed line or
+ * enclose a place where lines were only added or deleted. A warning that
+ * disappeared or appeared also counts as in the changed code (onChangedLine)
+ * when it starts right below changed code, with only comment and annotation
+ * lines in between (e.g. a Javadoc added above a method, a statement removed
+ * above a declaration); a warning that stayed there does not.
  *
  * @param diff the file's change blocks from the result JSON (changed line numbers)
+ * @param text the file's content before and after, to see the comment and
+ *   annotation lines above a warning; without it only the line right above counts
  */
 export function diffWarnings(
   before: Warning[],
@@ -77,6 +87,7 @@ export function diffWarnings(
   diff: { before: number[]; after: number[] }[],
   beforeLineCount: number,
   afterLineCount: number,
+  text: { before?: string; after?: string } = {},
 ): FileWarningDiff {
   const changedBefore = new Set<number>();
   const changedAfter = new Set<number>();
@@ -122,8 +133,12 @@ export function diffWarnings(
       gapsAfter.push(gapAfterUnchanged(Math.min(...block.before), unchangedBefore, unchangedAfter, afterLineCount));
     }
   }
+  const leadingBefore = leadingLines(text.before);
+  const leadingAfter = leadingLines(text.after);
   const inChangedBefore = (w: Warning) => inChangedCode(w, changedBefore, gapsBefore);
   const inChangedAfter = (w: Warning) => inChangedCode(w, changedAfter, gapsAfter);
+  const removedByChange = (w: Warning) => inChangedBefore(w) || belowChange(w.line, changedBefore, gapsBefore, leadingBefore);
+  const addedByChange = (w: Warning) => inChangedAfter(w) || belowChange(w.line, changedAfter, gapsAfter, leadingAfter);
 
   // Where each warning sits, in terms comparable across the commit.
   const placeBefore = (w: Warning) =>
@@ -164,16 +179,20 @@ export function diffWarnings(
       unmatched.push(w);
     }
   }
-  const removed: ChangedWarning[] = [];
+  const leftOver: Warning[] = [];
   for (const w of unmatched) {
     const i = take(loose, `${placeBefore(w)}\0${w.rule}`);
     if (i >= 0) {
       pairs.push([w, after[i]]);
     } else {
-      removed.push({ ...w, onChangedLine: inChangedBefore(w) });
+      leftOver.push(w);
     }
   }
-  const added = after.filter((_, i) => available[i]).map((w) => ({ ...w, onChangedLine: inChangedAfter(w) }));
+  const movedPairs = matchMoved(leftOver, after, available, (w) => mapRange(w, unchangedBefore, moved));
+  pairs.push(...movedPairs);
+  const movedBefore = new Set(movedPairs.map(([b]) => b));
+  const removed: ChangedWarning[] = leftOver.filter((w) => !movedBefore.has(w)).map((w) => ({ ...w, onChangedLine: removedByChange(w) }));
+  const added = after.filter((_, i) => available[i]).map((w) => ({ ...w, onChangedLine: addedByChange(w) }));
 
   for (const [b, a] of pairs) {
     unchanged++;
@@ -213,6 +232,105 @@ function groupIndexes(warnings: Warning[], key: (w: Warning) => string): Map<str
     }
   });
   return map;
+}
+
+/**
+ * Pairs warnings the commit only moved to another place in the file:
+ *  - the same rule and the same message up to numbers outside quotes, where
+ *    the message quotes a name (e.g. the literal of AvoidDuplicateLiterals,
+ *    whose reported line is its first occurrence), once on each side;
+ *  - a multi-line warning (e.g. a class or the import list) whose lines,
+ *    mapped to the after version, overlap one warning of the same rule.
+ * Messages without a quoted name (e.g. "Public method and constructor
+ * comments are required") are too common to tell warnings apart, so a
+ * single-line warning with such a message is never paired across places.
+ */
+function matchMoved(before: Warning[], after: Warning[], available: boolean[], mapToAfter: (w: Warning) => [number, number] | null): [Warning, Warning][] {
+  const pairs: [Warning, Warning][] = [];
+  const paired = new Set<Warning>();
+  const groups = new Map<string, { before: Warning[]; after: number[] }>();
+  const group = (key: string) => groups.get(key) ?? groups.set(key, { before: [], after: [] }).get(key)!;
+  for (const w of before) {
+    const id = messageIdentity(w.message);
+    if (id !== null) {
+      group(`${w.rule}\0${id}`).before.push(w);
+    }
+  }
+  after.forEach((w, i) => {
+    const id = available[i] ? messageIdentity(w.message) : null;
+    if (id !== null) {
+      group(`${w.rule}\0${id}`).after.push(i);
+    }
+  });
+  for (const g of groups.values()) {
+    if (g.before.length === 1 && g.after.length === 1) {
+      available[g.after[0]] = false;
+      paired.add(g.before[0]);
+      pairs.push([g.before[0], after[g.after[0]]]);
+    }
+  }
+  for (const w of before) {
+    const range = !paired.has(w) && w.endLine > w.line ? mapToAfter(w) : null;
+    if (!range) {
+      continue;
+    }
+    const candidates = after
+      .map((_, i) => i)
+      .filter((i) => available[i] && after[i].rule === w.rule && after[i].endLine > after[i].line && after[i].line <= range[1] && after[i].endLine >= range[0]);
+    if (candidates.length === 1) {
+      available[candidates[0]] = false;
+      pairs.push([w, after[candidates[0]]]);
+    }
+  }
+  return pairs;
+}
+
+/** The message with numbers outside quotes replaced, or null when it quotes nothing. */
+export function messageIdentity(message: string): string | null {
+  const parts = message.split(/('[^']*'|"[^"]*")/);
+  return parts.length > 1 ? parts.map((p, i) => (i % 2 === 0 ? p.replace(/\d+/g, '#') : p)).join('') : null;
+}
+
+/** The unchanged lines of a before-version range, mapped to the after version (first and last). */
+function mapRange(w: Warning, unchangedBefore: number[], moved: Map<number, number>): [number, number] | null {
+  let first: number | null = null;
+  let last: number | null = null;
+  for (const l of unchangedBefore) {
+    if (l > w.endLine) {
+      break;
+    }
+    const m = l >= w.line ? moved.get(l) : undefined;
+    if (m !== undefined) {
+      first ??= m;
+      last = m;
+    }
+  }
+  return first === null || last === null ? null : [first, last];
+}
+
+/** Whether a line (1-based) is a comment or an annotation; always false without the text. */
+function leadingLines(text: string | undefined): (line: number) => boolean {
+  if (text === undefined) {
+    return () => false;
+  }
+  const lines = text.split('\n');
+  return (line) => {
+    const t = (lines[line - 1] ?? '').trim();
+    return t.startsWith('//') || t.startsWith('/*') || t.startsWith('*') || t.startsWith('@');
+  };
+}
+
+/** A changed line, or a place where lines were added, right above `line` or above its comment and annotation lines. */
+function belowChange(line: number, changed: Set<number>, gaps: number[], isLeading: (line: number) => boolean): boolean {
+  for (let above = line - 1; above >= 0; above--) {
+    if (changed.has(above) || gaps.includes(above)) {
+      return true;
+    }
+    if (above === 0 || !isLeading(above)) {
+      return false;
+    }
+  }
+  return false;
 }
 
 function inChangedCode(w: Warning, changed: Set<number>, gaps: number[]): boolean {

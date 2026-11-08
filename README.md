@@ -191,16 +191,22 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 | `added` | 커밋 후 새로 생긴 warning (`line`은 **수정 후** 파일 기준) |
 | `unchanged` | 커밋 전후 모두 있는 warning 수 |
 | `rule` / `ruleset` / `priority` | PMD 규칙 이름 / 카테고리 / 우선순위(1 높음 … 5 낮음) |
-| `onChangedLine` | warning이 커밋이 수정한 코드에 있는지: 범위(`line`~`endLine`)에 바뀐 줄이 포함되거나, 줄이 추가만(또는 삭제만) 된 자리를 감싸는 경우(예: 메서드 중간에 줄이 추가됨). `false`로 사라진 warning은 다른 곳의 변경으로 해결된 경우입니다(예: 안 쓰던 private 메서드를 다른 곳에서 호출하기 시작) |
+| `onChangedLine` | warning이 커밋이 수정한 코드에 있는지: 범위(`line`~`endLine`)에 바뀐 줄이 포함되거나, 줄이 추가만(또는 삭제만) 된 자리를 감싸는 경우(예: 메서드 중간에 줄이 추가됨). 또 **바로 위 줄이 바뀌어 사라지거나 생긴** warning도 포함합니다(사이에 주석·어노테이션 줄만 있는 경우 포함. 예: 메서드 위에 Javadoc이나 `@Override`·`@Test`를 추가, 선언 위의 문장을 삭제). `false`로 사라진 warning은 다른 곳의 변경으로 해결된 경우입니다(예: 안 쓰던 private 메서드를 다른 곳에서 호출하기 시작) |
 | `error` | PMD가 수정 전/후 파일을 파싱하지 못해 비교하지 않은 경우의 이유 |
 
 **같은 warning으로 보는 기준**: 같은 규칙의 warning이 대응하는 위치에 있으면 유지된 것으로 봅니다.
 바뀌지 않은 줄은 줄 번호가 밀린 만큼 보정하고, 바뀐 줄은 같은 변경 블록 안에서 찾습니다(메시지까지 같은 것을 먼저 대응).
-코드가 파일의 다른 위치로 옮겨지면 사라짐+생김으로 기록됩니다.
+그래도 짝이 없는 warning은 **위치만 옮겨진** 것인지 한 번 더 봅니다.
+
+- 메시지에 따옴표로 된 이름이 있고(변수·메서드·클래스 이름, 문자열 리터럴), 따옴표 밖의 숫자만 다른 메시지가 수정 전과 후에 하나씩만 있으면 같은 warning입니다.
+  예: `AvoidDuplicateLiterals`는 리터럴이 처음 나온 줄에 표시되므로, 앞쪽에 같은 리터럴을 쓰면 위치가 옮겨갑니다. 메서드를 파일 안에서 옮긴 경우도 해당합니다.
+- 여러 줄에 걸친 warning(클래스, import 목록 등)은 수정 후 위치로 옮긴 범위가 같은 규칙의 warning 하나와 겹치면 같은 warning입니다(예: 맨 위에 import를 추가해 `ExcessiveImports`의 시작 줄이 바뀐 경우).
+- `"Public method and constructor comments are required"`처럼 이름이 없는 메시지는 어느 warning인지 구분할 수 없어, 다른 위치끼리 짝짓지 않습니다(사라짐+생김으로 기록).
 
 ### warning removal rate
 
 `rules`는 파일의 **수정된 코드 블록**만 보고 규칙별로 warning을 셉니다(바뀌지 않은 줄의 warning은 세지 않음).
+바로 위 줄이 바뀌어 사라지거나 생긴 warning(`onChangedLine: true`)도 셉니다. 그 자리에 그대로 남은 warning은 세지 않습니다.
 
 | 필드 | 내용 |
 | --- | --- |
@@ -246,14 +252,14 @@ ff521d70b2ecf2ed85dd1012081493ad7d8c0ba6,gson/src/main/java/com/google/gson/inte
 | `Warning Removal Rate` | (Before − After) / Before |
 
 - **순서**: `.pmd.json`과 같습니다(수집 결과의 커밋 순서 → 파일 → 규칙 이름순). 같은 파일이 여러 커밋에서 바뀌었으면 커밋마다 따로 행이 있습니다.
-- gson 결과: 2,830행(파일별 규칙 항목 5,632개 중 Before = 0인 2,802개 제외). 비율이 1(모두 제거) 961행, 0~1(줄어듦) 146행, 0(같은 수) 1,357행, 음수(늘어남) 366행.
+- gson 결과: 2,879행(파일별 규칙 항목 5,696개 중 Before = 0인 2,817개 제외). 비율이 1(모두 제거) 1,000행, 0~1(줄어듦) 150행, 0(같은 수) 1,358행, 음수(늘어남) 371행.
 - 여러 파일을 묶어 규칙별 비율을 내려면 비율을 평균하지 말고 Before·After를 합한 뒤 계산하세요. Before가 1~2개뿐인 행은 비율이 1이나 큰 음수로 쉽게 치우칩니다.
 
 참고
 - 분석 대상은 바뀐 `.java` 파일뿐이고(프로젝트 전체가 아님), 빌드 없이 실행하므로 클래스패스가 없습니다. 타입 정보가 필요한 일부 PMD 규칙은 정확도가 떨어질 수 있습니다.
 - **규칙**: 기본값 `all`은 PMD Java 규칙 카테고리 8개(Best Practices, Code Style, Design, Documentation, Error Prone, Multithreading, Performance, Security)의 **모든 규칙**(약 300개)을 실행합니다.
   확장에 포함된 [`resources/pmd/all-java-rules.xml`](resources/pmd/all-java-rules.xml)을 쓰며, 프로젝트별 설정 없이는 동작하지 않는 `LoosePackageCoupling`(검사할 패키지를 지정해야 함)만 뺐습니다.
-  Code Style·Documentation warning이 많이 나오므로(google/gson `fix, bug`: 변화 16,362건 중 약 3/4), 필요하면 `warnPriority.pmd.ruleset`으로 좁히세요.
+  Code Style·Documentation warning이 많이 나오므로(google/gson `fix, bug`: 변화 16,222건 중 약 3/4), 필요하면 `warnPriority.pmd.ruleset`으로 좁히세요.
   예: PMD 권장 세트 `rulesets/java/quickstart.xml`, 카테고리 `category/java/errorprone.xml,category/java/bestpractices.xml`, 또는 직접 만든 XML.
 - 설정 문제로 PMD가 실행하지 못한 규칙이 있으면 나머지 규칙으로 분석을 계속하고, 그 사실을 알림과 출력 창 로그에 남깁니다.
 

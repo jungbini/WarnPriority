@@ -161,12 +161,15 @@ export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnaly
         files.push({ ...head, error: `PMD could not parse the file (${errors.join('; ')})` });
         continue;
       }
+      const beforeText = e.before ? await fs.readFile(e.before, 'utf8') : undefined;
+      const afterText = e.after ? await fs.readFile(e.after, 'utf8') : undefined;
       const d = diffWarnings(
         e.before ? (report.warnings.get(fileKey(e.before)) ?? []) : [],
         e.after ? (report.warnings.get(fileKey(e.after)) ?? []) : [],
         e.file.diff,
-        e.before ? countLines(await fs.readFile(e.before, 'utf8')) : 0,
-        e.after ? countLines(await fs.readFile(e.after, 'utf8')) : 0,
+        beforeText === undefined ? 0 : countLines(beforeText),
+        afterText === undefined ? 0 : countLines(afterText),
+        { before: beforeText, after: afterText },
       );
       summary.filesAnalyzed++;
       summary.removed += d.removed.length;

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.0
+
+- **위치만 옮겨진 warning을 같은 warning으로 판정**: 사라짐+생김으로 기록되던 경우를 유지로 봄
+  - 메시지에 따옴표로 된 이름(변수·메서드·클래스, 문자열 리터럴)이 있고 따옴표 밖의 숫자만 다른 warning이 수정 전후에 하나씩일 때
+    (예: `AvoidDuplicateLiterals`의 표시 위치가 리터럴의 첫 위치를 따라 옮겨감, 파일 안에서 옮긴 메서드)
+  - 여러 줄 warning(클래스, import 목록)의 범위가 수정 후 같은 규칙의 warning 하나와 겹칠 때(예: import 추가로 `ExcessiveImports`의 시작 줄이 바뀜)
+- **바로 위 줄이 바뀌어 사라지거나 생긴 warning을 수정된 코드에 포함**(`onChangedLine: true`, `rules`·규칙별 표에 반영):
+  바로 위 줄이 바뀌었거나, 사이에 주석·어노테이션 줄만 있는 경우(예: Javadoc·`@Override`·`@Test` 추가, 선언 위 문장 삭제).
+  그 자리에 그대로 남은 warning은 세지 않음
+- google/gson `fix, bug`(커밋 380개): 위치만 옮겨진 70쌍이 유지로 바뀌고, 사라진 warning 220개와 생긴 warning 45개가 수정된 코드에 새로 포함됨
+
 ## 0.13.0
 
 - 규칙별 표 `<결과>.pmd-rules.csv`를 **파일별로** 변경: 여러 파일을 합치지 않고 한 행이 커밋·파일·규칙 하나
