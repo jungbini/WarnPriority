@@ -8,3 +8,5 @@ out/**/*.map
 **/*.ts
 .gitignore
 node_modules/**
+**/__pycache__/**
+**/*.pyc

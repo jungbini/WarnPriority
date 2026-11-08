@@ -2,3 +2,5 @@ node_modules/
 out/
 *.vsix
 warnpriority-output/
+__pycache__/
+*.pyc

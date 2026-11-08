@@ -9,7 +9,8 @@ const python = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).sta
 
 test('topic_model.py helpers (Python unit tests)', { skip: !python && 'Python not found' }, () => {
   const tests = path.join(__dirname, '..', '..', 'src', 'test', 'python', 'test_topic_model.py');
-  const r = spawnSync(python!, ['-m', 'unittest', tests], { encoding: 'utf8' });
+  // No __pycache__ next to the script: it would end up in the .vsix.
+  const r = spawnSync(python!, ['-m', 'unittest', tests], { encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
   assert.equal(r.status, 0, r.stderr);
 });
 
