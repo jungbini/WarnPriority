@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { PmdLocation } from './pmdInstaller';
 import { fileKey, runPmd } from './pmdRunner';
-import { formatRuleTable, totalRules } from './ruleTable';
+import { fileRuleRows, formatRuleTable } from './ruleTable';
 import { OutputCommit } from './types';
 import { countLines, diffWarnings, FileWarningDiff, warningRemovalRate } from './warningDiff';
 import { formatJson } from './writers';
@@ -40,7 +40,7 @@ export interface PmdAnalysisSummary {
 
 export interface PmdAnalysisResult {
   outputFile: string;
-  /** Totals per rule over all files (<result>.pmd-rules.csv). */
+  /** Per file and rule, the warnings in the changed code before and after (<result>.pmd-rules.csv). */
   rulesFile: string;
   summary: PmdAnalysisSummary;
 }
@@ -62,7 +62,7 @@ export function pmdOutputFile(resultFile: string): string {
   return resultFile.replace(/\.json$/i, '') + '.pmd.json';
 }
 
-/** The per-rule totals of the analysis, e.g. "x.json" -> "x.pmd-rules.csv" (see ruleTable.ts). */
+/** The per-file rule table of the analysis, e.g. "x.json" -> "x.pmd-rules.csv" (see ruleTable.ts). */
 export function pmdRulesFile(resultFile: string): string {
   return resultFile.replace(/\.json$/i, '') + '.pmd-rules.csv';
 }
@@ -190,7 +190,7 @@ export async function analyzeWithPmd(opts: PmdAnalysisOptions): Promise<PmdAnaly
   const outputFile = pmdOutputFile(opts.resultFile);
   await fs.writeFile(outputFile, formatJson(output) + '\n');
   const rulesFile = pmdRulesFile(opts.resultFile);
-  await fs.writeFile(rulesFile, formatRuleTable(totalRules(output)));
+  await fs.writeFile(rulesFile, formatRuleTable(fileRuleRows(output)));
   return { outputFile, rulesFile, summary };
 }
 

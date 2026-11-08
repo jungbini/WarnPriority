@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0
+
+- 규칙별 표 `<결과>.pmd-rules.csv`를 **파일별로** 변경: 여러 파일을 합치지 않고 한 행이 커밋·파일·규칙 하나
+  (열: Commit, File, Rule, Ruleset, Priority, Before, After, Removed, Added, Warning Removal Rate).
+  **Before가 0인 행은 제외**(`.pmd.json`에는 그대로 남음)
+
 ## 0.12.0
 
 - PMD 분석 결과(`.pmd.json`)의 파일마다 **규칙별 `rules`** 추가: 규칙의 `priority`, 수정된 코드 블록의 warning 수 `before`(수정 전)·`after`(수정 후),

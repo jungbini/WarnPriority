@@ -59,7 +59,7 @@ warnpriority-output/
 └─ google_gson/                                     ← 저장소(프로젝트)별 폴더
    ├─ google_gson_fix-bug_20261107-104155.json      ← 1단계: 커밋 목록 + 바뀐 줄 번호
    ├─ google_gson_fix-bug_20261107-104155.pmd.json  ← 2단계: 커밋별 사라진/생긴 warning, 파일·규칙별 warning removal rate
-   ├─ google_gson_fix-bug_20261107-104155.pmd-rules.csv     ← 2단계: 전체 결과를 규칙별로 합친 warning removal rate 표
+   ├─ google_gson_fix-bug_20261107-104155.pmd-rules.csv     ← 2단계: 파일·규칙별 warning removal rate 표
    ├─ google_gson_fix-bug_20261107-104155.topics.csv          ← 3단계: 파일별 토픽 비율(%)
    ├─ google_gson_fix-bug_20261107-104155.topic-keywords.csv  ← 3단계: 토픽별 키워드
    ├─ .topic-embeddings/                            ← 3단계 임베딩 캐시
@@ -160,7 +160,7 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
    이미 설치한 PMD가 있으면 `warnPriority.pmd.home`에 지정합니다.
 3. **Java 8 이상**이 필요합니다(`warnPriority.pmd.java` → `JAVA_HOME` → VS Code Java 확장의 JDK → PATH의 `java` 순으로 찾음).
 4. 결과는 수집 결과 옆에 `<결과 파일 이름>.pmd.json`으로 저장되고 바로 열립니다.
-   전체 결과를 규칙별로 합친 표 `<결과 파일 이름>.pmd-rules.csv`도 함께 저장됩니다(완료 알림의 **규칙별 표 보기**, [규칙별 표](#규칙별-표-pmd-rulescsv) 참고).
+   파일·규칙별 warning removal rate 표 `<결과 파일 이름>.pmd-rules.csv`도 함께 저장됩니다(완료 알림의 **규칙별 표 보기**, [규칙별 표](#규칙별-표-pmd-rulescsv) 참고).
 
 ```json
 [
@@ -224,31 +224,30 @@ diff의 문맥 줄은 버리고 **바뀐 줄만** 남긴 뒤, 연속된 변경 �
 
 ### 규칙별 표 (`.pmd-rules.csv`)
 
-모든 커밋·파일의 `rules`를 규칙별로 합친 표입니다. 비율은 파일별 비율의 평균이 아니라 **합계로 계산**합니다: (Before 합 − After 합) / Before 합.
-UTF-8(BOM) CSV라 Excel에서 바로 열립니다. google/gson `fix, bug`(커밋 380개)의 예:
+`.pmd.json`의 파일별 `rules`를 표로 옮긴 것입니다. **한 행이 커밋 하나의 파일 하나의 규칙 하나**이며, 여러 파일을 합치지 않습니다.
+수정 전 코드 블록에 그 규칙의 warning이 없었던 경우(**Before = 0**)는 비율을 계산할 수 없으므로 표에서 뺍니다(`.pmd.json`에는 남아 있음).
+UTF-8(BOM) CSV라 Excel에서 바로 열립니다. google/gson `fix, bug`(커밋 380개)의 일부:
 
 ```csv
-Rule,Ruleset,Priority,Before,After,Removed,Added,Warning Removal Rate,Files,Commits
-IdenticalCatchBranches,Code Style,3,21,5,17,1,0.7619,10,8
-ControlStatementBraces,Code Style,3,35,11,35,11,0.6857,20,13
-MissingOverride,Best Practices,3,73,57,64,48,0.2192,54,32
-PublicMemberInNonPublicType,Design,3,184,145,112,73,0.212,96,47
-MethodArgumentCouldBeFinal,Code Style,3,812,1266,413,867,-0.5591,345,137
-CommentRequired,Documentation,3,934,1742,364,1172,-0.8651,522,221
-UseCollectionIsEmpty,Best Practices,3,0,1,0,1,,1,1
+Commit,File,Rule,Ruleset,Priority,Before,After,Removed,Added,Warning Removal Rate
+dae37cf0fe12235b76fb09f01118a0a8c8823f42,gson/src/main/java/com/google/gson/internal/bind/TypeAdapters.java,LiteralsFirstInComparisons,Best Practices,3,2,2,1,1,0
+dae37cf0fe12235b76fb09f01118a0a8c8823f42,gson/src/main/java/com/google/gson/internal/bind/TypeAdapters.java,LocalVariableDeclarationShouldBeAtStartOfBlock,Code Style,3,1,4,1,4,-3
+ff521d70b2ecf2ed85dd1012081493ad7d8c0ba6,gson/src/main/java/com/google/gson/internal/Excluder.java,OnlyOneReturn,Code Style,3,6,3,4,1,0.5
+ff521d70b2ecf2ed85dd1012081493ad7d8c0ba6,gson/src/main/java/com/google/gson/internal/TroubleshootingGuide.java,ClassWithOnlyPrivateConstructorsShouldBeFinal,Design,1,1,0,1,0,1
+ff521d70b2ecf2ed85dd1012081493ad7d8c0ba6,gson/src/main/java/com/google/gson/internal/TroubleshootingGuide.java,CommentRequired,Documentation,3,1,1,0,0,0
 ```
 
 | 열 | 내용 |
 | --- | --- |
+| `Commit` / `File` | 커밋 해시 / 파일 경로(수정 후 경로) |
 | `Rule` / `Ruleset` / `Priority` | PMD 규칙 이름 / 카테고리 / PMD 우선순위(1 높음 … 5 낮음) |
-| `Before` / `After` | 수정된 코드 블록의 warning 수 합계(수정 전 / 수정 후) |
-| `Removed` / `Added` | 그중 커밋으로 사라진 / 새로 생긴 warning 수 합계 |
-| `Warning Removal Rate` | (Before − After) / Before. Before가 0이면 빈칸 |
-| `Files` / `Commits` | 수정된 코드에 이 규칙의 warning이 있었던 파일 수 / 커밋 수 |
+| `Before` / `After` | 이 파일의 수정된 코드 블록에서 이 규칙을 위반한 warning 수(수정 전 / 수정 후). Before는 항상 1 이상 |
+| `Removed` / `Added` | 그중 커밋으로 사라진 / 새로 생긴 warning 수 |
+| `Warning Removal Rate` | (Before − After) / Before |
 
-- **정렬**: Warning Removal Rate가 높은 순, 같으면 Before가 많은 순입니다. Before가 0인 규칙(빈칸)은 맨 끝에 둡니다.
-- **표본 크기**: Before가 1~2개뿐인 규칙은 비율이 1이나 큰 음수로 쉽게 치우칩니다. 순위를 매길 때는 Before(또는 Files)가 충분한 규칙만 보세요(위 gson 결과에서 Before 50개 이상은 21개 규칙).
-- 테스트 파일도 포함합니다. 새로 추가된 파일의 warning은 모두 `Added`로 들어가 비율을 낮춥니다(gson 전체: 7,844 → 16,191, −1.0641).
+- **순서**: `.pmd.json`과 같습니다(수집 결과의 커밋 순서 → 파일 → 규칙 이름순). 같은 파일이 여러 커밋에서 바뀌었으면 커밋마다 따로 행이 있습니다.
+- gson 결과: 2,830행(파일별 규칙 항목 5,632개 중 Before = 0인 2,802개 제외). 비율이 1(모두 제거) 961행, 0~1(줄어듦) 146행, 0(같은 수) 1,357행, 음수(늘어남) 366행.
+- 여러 파일을 묶어 규칙별 비율을 내려면 비율을 평균하지 말고 Before·After를 합한 뒤 계산하세요. Before가 1~2개뿐인 행은 비율이 1이나 큰 음수로 쉽게 치우칩니다.
 
 참고
 - 분석 대상은 바뀐 `.java` 파일뿐이고(프로젝트 전체가 아님), 빌드 없이 실행하므로 클래스패스가 없습니다. 타입 정보가 필요한 일부 PMD 규칙은 정확도가 떨어질 수 있습니다.
@@ -463,7 +462,7 @@ src/
    ├─ pmdInstaller.ts  PMD 내려받기·검증·설치
    ├─ pmdRunner.ts     PMD 실행, JSON 리포트 읽기 (ruleset "all" → resources/pmd/all-java-rules.xml)
    ├─ warningDiff.ts   커밋 전후 warning 대응, 규칙별 수정된 코드 warning 수·warning removal rate(분석기와 무관)
-   ├─ ruleTable.ts     전체 결과의 규칙별 합계 → <결과>.pmd-rules.csv
+   ├─ ruleTable.ts     파일·규칙별 표(Before 0 제외) → <결과>.pmd-rules.csv
    ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json, <결과>.pmd-rules.csv
    ├─ topics.ts        토픽 모델링 스크립트 실행, 전용 Python 환경 준비
    ├─ collector.ts     전체 파이프라인
