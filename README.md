@@ -2,7 +2,7 @@
 
 GitHub 저장소의 커밋 이력에서 정적 분석 warning의 변화를 연구하기 위한 VS Code 확장입니다. 네 단계로 씁니다.
 
-1. **변경 코드 수집** — 커밋 메시지에 키워드(예: `fix, bug`)가 들어간 커밋을 찾아, 바뀐 **줄 번호**를 JSON으로 저장하고 바뀐 소스 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 둡니다.
+1. **변경 코드 수집** — 커밋 메시지에 키워드(예: `fix, bug`)가 들어간 커밋을 찾아, 바뀐 **줄 번호**를 JSON으로 저장하고 바뀐 **Java 파일**(PMD로 분석할 수 있는 파일)의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 둡니다.
 2. **PMD 분석** — 수정 전/후 파일에 PMD(Java 규칙 전체)를 실행해, 커밋으로 **사라진 warning과 새로 생긴 warning**을 기록하고,
    규칙별로 수정된 코드의 warning 수(수정 전/후)와 **warning removal rate**를 구합니다.
 3. **토픽 모델링** — 수정 전 소스 코드 전체를 CodeRankEmbed + BERTopic으로 토픽 모델링해, **파일별 기능(토픽) 비율**을 CSV로 정리합니다.
@@ -77,7 +77,7 @@ warnpriority-output/
    └─ …
 ```
 
-- `before/`, `after/` 아래는 저장소 안의 경로를 그대로 따릅니다. 바뀐 소스 파일만 저장합니다(프로젝트 전체가 아님).
+- `before/`, `after/` 아래는 저장소 안의 경로를 그대로 따릅니다. 바뀐 Java 파일만 저장합니다(프로젝트 전체가 아님).
 - 새로 추가된 파일은 `after/`에만, 삭제된 파일은 `before/`에만 있습니다. 이름이 바뀐 파일은 `before/`에 옛 경로(`oldFile`)로 저장됩니다.
 - 같은 저장소를 다른 키워드로 다시 수집하면 같은 커밋 폴더를 그대로 덮어씁니다(내용은 동일).
 - 모든 단계는 CLI로도 실행할 수 있습니다([개발](#개발) 참고).
@@ -423,7 +423,7 @@ Topic #16,"date, style, time, format, timestamp",2,MethodArgumentCouldBeFinal,Co
 | 설정 | 기본값 | 설명 |
 | --- | --- | --- |
 | `warnPriority.outputDirectory` | `""` | 결과 저장 폴더(안에 저장소별 폴더 생성). 비우면 `<워크스페이스>/warnpriority-output` |
-| `warnPriority.fileExtensions` | 소스 코드 확장자 목록 (아래) | 이 확장자의 파일만 수집. Java만: `["java"]`. 비워 두면 기본 목록 |
+| `warnPriority.fileExtensions` | `["java"]` | 이 확장자의 파일만 수집. 기본값은 PMD로 분석할 수 있는 Java만. 비워 두면 기본값 |
 | `warnPriority.maxCommits` | `0` | 최대 커밋 수(최신순). `0` = 제한 없음 |
 | `warnPriority.caseSensitive` | `false` | 키워드 대소문자 구분 |
 | `warnPriority.useRegex` | `false` | 키워드를 정규식(POSIX 확장)으로 처리 |
@@ -443,20 +443,19 @@ Topic #16,"date, style, time, format, timestamp",2,MethodArgumentCouldBeFinal,Co
 
 ### 수집 대상 파일
 
-정적 분석이 가능한 **소스 코드 파일만** 수집합니다. 기본값은 정적 분석기가 지원하는 언어의 확장자입니다.
+PMD로 분석할 수 있는 **Java 파일(`.java`)만** 수집합니다(대소문자 구분 없음).
+Kotlin·Python·JavaScript/TypeScript 같은 다른 언어의 파일과 README·XML·YAML·빌드 설정·이미지는 JSON에도, `before/`·`after/` 폴더에도 들어가지 않습니다.
+Java 파일을 하나도 바꾸지 않은 커밋은 결과에서 빠집니다(google/gson `fix, bug`: 449 → 380 커밋).
 
-`java kt kts scala groovy c h cc cpp cxx hh hpp hxx cs go rs py js jsx mjs cjs ts tsx php rb swift m mm`
-
-README·XML·YAML·빌드 설정·이미지처럼 코드가 아닌 파일은 JSON에도, `before/`·`after/` 폴더에도 들어가지 않습니다.
-그런 파일만 바꾼 커밋은 결과에서 빠집니다(google/gson `fix, bug`: 449 → 380 커밋).
-분석기가 한 언어만 다룬다면 그 언어로 좁히는 것이 좋습니다. 예를 들어 Java만 수집하려면 설정(`settings.json`)에 다음을 추가합니다.
+설정을 비워 두어도(`[]`) 기본값(Java)이 적용됩니다. 다른 파일도 수집하려면 설정(`settings.json`)에 확장자를 직접 넣습니다.
+다만 PMD 분석·토픽별 warning 우선순위는 Java 파일만 다룹니다.
 
 ```json
-"warnPriority.fileExtensions": ["java"]
+"warnPriority.fileExtensions": ["java", "kt"]
 ```
 
-설정을 비워 두어도(`[]`) 기본 목록이 적용되므로, XML·README 같은 소스 코드가 아닌 파일은 확장자를 직접 목록에 넣지 않는 한 수집되지 않습니다.
 어떤 확장자로 수집했는지는 출력 창(`WarnPriority`) 로그의 `File extensions:` 줄에 남습니다.
+0.16.0 이하에서 이 설정을 직접 바꿔 두었다면 그 값이 계속 쓰이므로, Java만 수집하려면 설정에서 지우거나 `["java"]`로 바꾸세요.
 ## 동작 방식
 
 - GitHub REST API 대신 **`git clone --bare`** 로 저장소를 받아 로컬에서 `git log --grep … -p`로 분석합니다.
@@ -485,7 +484,7 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   npm run collect -- https://github.com/google/gson "fix,bug" --ext java --out-dir results
   ```
 
-  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,py`(기본: 위 소스 코드 확장자), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
+  옵션: `--out-dir <폴더>`(기본 `./warnpriority-output`, 안에 저장소별 폴더 생성), `--ext java,kt`(수집할 확장자, 기본 `java`), `--max N`, `--case-sensitive`, `--regex`, `--merges`, `--ignore-ws`, `--cache <폴더>`(기본 `~/.warnpriority/repos`), `--git <경로>`
 
 - PMD 분석도 CLI로 실행할 수 있습니다(PMD는 `~/.warnpriority/pmd`에 내려받음):
 

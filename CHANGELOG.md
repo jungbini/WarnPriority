@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.17.0
+
+- 변경 코드 수집이 **기본으로 Java 파일(`.java`)만** 수집(`warnPriority.fileExtensions` 기본값 `["java"]`, CLI `--ext` 기본값 `java`).
+  PMD로 분석할 수 없는 다른 언어(Kotlin, Python, JavaScript/TypeScript, C/C++ 등)의 파일은 수집하지 않음.
+  설정을 비워 두어도 Java만 수집하고, 다른 확장자는 설정에 직접 넣었을 때만 수집
+
 ## 0.16.0
 
 - **토픽별 warning 우선순위(TOP)** 명령 추가(`WarnPriority: 토픽별 warning 우선순위 (TOP)`, CLI `prioritize`):

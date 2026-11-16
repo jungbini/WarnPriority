@@ -9,7 +9,7 @@ import {
   collectCommitChanges,
   defaultOutputFileName,
   projectDirName,
-  SOURCE_FILE_EXTENSIONS,
+  DEFAULT_FILE_EXTENSIONS,
   toPathspecs,
 } from '../core/collector';
 import { CancelledError } from '../core/git';
@@ -125,7 +125,7 @@ test('collects only commits whose message contains the keyword (case-insensitive
 });
 
 test('result file contains sha, parent, author, message and per-file line numbers only', async () => {
-  const opts = options({ keywords: ['bugfix'] });
+  const opts = options({ keywords: ['bugfix'], fileExtensions: ['java', 'py'] });
   await collectCommitChanges(opts);
   const commitSha = sha('bugfix');
   assert.deepEqual(resultOf(opts), [
@@ -145,7 +145,7 @@ test('result file contains sha, parent, author, message and per-file line number
 });
 
 test('saves the changed files before/after the commit in a folder named by the commit hash', async () => {
-  const opts = options({ keywords: ['bugfix'] });
+  const opts = options({ keywords: ['bugfix'], fileExtensions: ['java', 'py'] });
   const result = await collectCommitChanges(opts);
   const commitSha = sha('bugfix');
   const parent = git(source, 'rev-parse', `${commitSha}^`).trim();
@@ -201,18 +201,25 @@ test('file extension filter limits files and drops commits without matching file
   assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')));
 });
 
-test('the default extension list keeps source files and skips docs', async () => {
-  const opts = options({ keywords: ['fix'], fileExtensions: [...SOURCE_FILE_EXTENSIONS] });
-  await collectCommitChanges(opts);
-  const data = resultOf(opts);
-  const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
-  assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/util.py', 'src/Calc.java']);
-  assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')), 'README-only commit dropped');
+test('by default only Java files are collected (the files PMD analyzes)', async () => {
+  for (const fileExtensions of [[...DEFAULT_FILE_EXTENSIONS], []]) {
+    const opts = options({ keywords: ['fix'], fileExtensions });
+    await collectCommitChanges(opts);
+    const data = resultOf(opts);
+    const files = data.flatMap((c: { files: { file: string }[] }) => c.files.map((f) => f.file));
+    assert.deepEqual(files, ['src/Old.java', 'src/Calc.java', 'src/Calc.java'], JSON.stringify(fileExtensions));
+    assert.ok(!data.some((c: { message: string }) => c.message.includes('readme')), 'README-only commit dropped');
+  }
+  // Other languages only when listed.
+  const withPython = options({ keywords: ['fix'], fileExtensions: ['java', 'py'] });
+  await collectCommitChanges(withPython);
+  assert.ok(resultOf(withPython).some((c: { files: { file: string }[] }) => c.files.some((f) => f.file === 'src/util.py')));
 });
 
-test('package.json default for warnPriority.fileExtensions matches SOURCE_FILE_EXTENSIONS', () => {
+test('package.json default for warnPriority.fileExtensions matches DEFAULT_FILE_EXTENSIONS (Java only)', () => {
   const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
-  assert.deepEqual(pkg.contributes.configuration.properties['warnPriority.fileExtensions'].default, [...SOURCE_FILE_EXTENSIONS]);
+  assert.deepEqual(pkg.contributes.configuration.properties['warnPriority.fileExtensions'].default, [...DEFAULT_FILE_EXTENSIONS]);
+  assert.deepEqual([...DEFAULT_FILE_EXTENSIONS], ['java']);
 });
 
 test('an empty extension list still never collects non-source files', async () => {

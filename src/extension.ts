@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { analyzeWithPmd, PmdAnalysisResult } from './core/analyzeWithPmd';
 import { MissingInputError, prioritizeWarnings } from './core/prioritize';
-import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName, SOURCE_FILE_EXTENSIONS } from './core/collector';
+import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName, DEFAULT_FILE_EXTENSIONS } from './core/collector';
 import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { downloadSize, installPmd, locatePmd, PmdLocation } from './core/pmdInstaller';
@@ -131,7 +131,7 @@ async function runCollect(context: vscode.ExtensionContext, output: vscode.Outpu
             keywords,
             caseSensitive: config.get<boolean>('caseSensitive', false),
             useRegex: config.get<boolean>('useRegex', false),
-            fileExtensions: config.get<string[]>('fileExtensions', [...SOURCE_FILE_EXTENSIONS]),
+            fileExtensions: config.get<string[]>('fileExtensions', [...DEFAULT_FILE_EXTENSIONS]),
             includeMergeCommits: config.get<boolean>('includeMergeCommits', false),
             ignoreWhitespace: config.get<boolean>('ignoreWhitespace', false),
             maxCommits: config.get<number>('maxCommits', 0),

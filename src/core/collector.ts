@@ -9,18 +9,12 @@ import { ProgressEvent, RepoRef } from './types';
 import { JsonArrayWriter, RunSummary } from './writers';
 
 /**
- * Default file filter: source files of languages that static analyzers
- * handle (Java: SpotBugs/PMD/Checkstyle, C/C++: cppcheck/clang-tidy, Python:
- * pylint, JS/TS: ESLint, ...). Docs, build files, data and images are skipped.
+ * Default file filter: Java source files, the files PMD (the analysis step)
+ * can analyze. Everything else (other languages, docs, build files, data,
+ * images) is skipped unless its extension is configured.
  * Keep in sync with the "warnPriority.fileExtensions" default in package.json.
  */
-export const SOURCE_FILE_EXTENSIONS: readonly string[] = [
-  'java', 'kt', 'kts', 'scala', 'groovy',
-  'c', 'h', 'cc', 'cpp', 'cxx', 'hh', 'hpp', 'hxx',
-  'cs', 'go', 'rs', 'py',
-  'js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx',
-  'php', 'rb', 'swift', 'm', 'mm',
-];
+export const DEFAULT_FILE_EXTENSIONS: readonly string[] = ['java'];
 
 export interface CollectOptions {
   repo: RepoRef;
@@ -31,8 +25,8 @@ export interface CollectOptions {
   useRegex: boolean;
   /**
    * Only collect changes to files with these extensions (e.g. ["java"]).
-   * Empty means SOURCE_FILE_EXTENSIONS: non-source files (xml, md, ...) are
-   * never collected unless their extension is listed explicitly.
+   * Empty means DEFAULT_FILE_EXTENSIONS (Java only): other files are never
+   * collected unless their extension is listed explicitly.
    */
   fileExtensions: string[];
   includeMergeCommits: boolean;
@@ -87,7 +81,7 @@ export async function collectCommitChanges(opts: CollectOptions): Promise<Collec
   const keywords = opts.keywords.map((k) => k.trim()).filter((k) => k.length > 0);
   let pathspecs = toPathspecs(opts.fileExtensions);
   if (pathspecs.length === 0) {
-    pathspecs = toPathspecs([...SOURCE_FILE_EXTENSIONS]);
+    pathspecs = toPathspecs([...DEFAULT_FILE_EXTENSIONS]);
   }
   opts.log?.(`File extensions: ${pathspecs.map((p) => p.replace(':(icase)*', '')).join(' ')}`);
   const revFilters: string[] = [];

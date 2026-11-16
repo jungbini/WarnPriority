@@ -4,7 +4,7 @@
  *
  *   npm run compile
  *   node out/cli.js https://github.com/owner/repo "fix,bug" [--out-dir dir]
- *        [--ext java,py] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
+ *        [--ext java] [--max 100] [--case-sensitive] [--regex] [--merges] [--ignore-ws]
  *        [--cache <dir>] [--git <path>]
  *
  *   node out/cli.js pmd <result.json> [--ruleset all|rulesets/java/quickstart.xml|...] [--pmd-home dir] [--java path]
@@ -21,7 +21,7 @@
  */
 import * as os from 'os';
 import * as path from 'path';
-import { collectCommitChanges, defaultOutputFileName, projectDirName, SOURCE_FILE_EXTENSIONS } from './core/collector';
+import { collectCommitChanges, defaultOutputFileName, projectDirName, DEFAULT_FILE_EXTENSIONS } from './core/collector';
 import { analyzeWithPmd } from './core/analyzeWithPmd';
 import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
@@ -47,10 +47,10 @@ function describeProgress(e: ProgressEvent): string {
 
 function usage(): never {
   console.error(
-    'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java,py] [--max N]\n' +
+    'Usage: node out/cli.js <github-url> <keywords> [--out-dir dir] [--ext java] [--max N]\n' +
       '                         [--case-sensitive] [--regex] [--merges] [--ignore-ws] [--cache dir] [--git path]\n' +
       '  <keywords> is a comma-separated list; use "" to collect every commit.\n' +
-      '  --ext defaults to source files of static-analyzable languages.\n' +
+      '  --ext defaults to java (the files PMD analyzes); list other extensions to collect them too.\n' +
       '\n' +
       '       node out/cli.js pmd <result.json> [--ruleset all|<rulesets>] [--pmd-home dir] [--java path]\n' +
       '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.\n' +
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     caseSensitive: flags['case-sensitive'] === true,
     useRegex: flags.regex === true,
     // Default (and for an empty list): source files of static-analyzable languages.
-    fileExtensions: typeof flags.ext === 'string' ? flags.ext.split(',') : [...SOURCE_FILE_EXTENSIONS],
+    fileExtensions: typeof flags.ext === 'string' ? flags.ext.split(',') : [...DEFAULT_FILE_EXTENSIONS],
     includeMergeCommits: flags.merges === true,
     ignoreWhitespace: flags['ignore-ws'] === true,
     maxCommits: flags.max ? parseInt(flags.max as string, 10) : 0,
