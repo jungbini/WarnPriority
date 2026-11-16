@@ -2,7 +2,7 @@
   "name": "warnpriority",
   "displayName": "WarnPriority",
   "description": "%extension.description%",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "publisher": "jungbini",
   "repository": {
     "type": "git",
@@ -170,6 +170,19 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.topics.excludeTestFiles%"
+        },
+        "warnPriority.topics.excludeExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "ts",
+            "tsx",
+            "mts",
+            "cts"
+          ],
+          "markdownDescription": "%config.topics.excludeExtensions%"
         }
       }
     },

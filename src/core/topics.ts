@@ -27,6 +27,8 @@ export type TopicProgress =
       files: number;
       /** Test files left out. */
       testFiles: number;
+      /** Files left out because of their extension (excludeExtensions). */
+      excludedFiles: number;
       chunks: number;
       uniqueChunks: number;
       outliers: number;
@@ -48,10 +50,20 @@ export interface TopicModelOptions {
   extraStopwords?: string[];
   /** Also model test files (left out by default). */
   includeTests?: boolean;
+  /** File extensions to leave out, without dot (e.g. "ts"). */
+  excludeExtensions?: string[];
   signal?: AbortSignal;
   /** stderr of the script (model download, BERTopic messages, errors). */
   log?: (line: string) => void;
   onProgress?: (p: TopicProgress) => void;
+}
+
+/** Extensions left out of topic modeling by default: TypeScript, which PMD cannot analyze either. */
+export const DEFAULT_TOPIC_EXCLUDED_EXTENSIONS: readonly string[] = ['ts', 'tsx', 'mts', 'cts'];
+
+/** [" .TS", "tsx", ""] -> ["ts", "tsx"]. */
+export function normalizeExtensions(extensions: readonly string[]): string[] {
+  return [...new Set(extensions.map((e) => e.trim().replace(/^\.+/, '').toLowerCase()).filter((e) => /^[a-z0-9]+$/.test(e)))];
 }
 
 /** Runs topic_model.py on a result JSON; resolves with its final report. */
@@ -69,6 +81,10 @@ export async function runTopicModel(opts: TopicModelOptions): Promise<TopicResul
   }
   if (opts.includeTests) {
     args.push('--include-tests');
+  }
+  const excluded = normalizeExtensions(opts.excludeExtensions ?? []);
+  if (excluded.length > 0) {
+    args.push('--exclude-extensions', excluded.join(','));
   }
   let result: TopicResult | undefined;
   const { code, stderr } = await runPython(opts.python, args, {

@@ -10,6 +10,7 @@ import { downloadSize, installPmd, locatePmd, PmdLocation } from './core/pmdInst
 import { ALL_RULES } from './core/pmdRunner';
 import {
   DEFAULT_EMBEDDING_MODEL,
+  DEFAULT_TOPIC_EXCLUDED_EXTENSIONS,
   describeTorch,
   detectNvidiaGpu,
   managedPython,
@@ -601,6 +602,7 @@ async function runTopicsCommand(context: vscode.ExtensionContext, output: vscode
             minTopicSize: config.get<number>('topics.minTopicSize', 0),
             extraStopwords: config.get<string[]>('topics.extraStopwords', []),
             includeTests: !config.get<boolean>('topics.excludeTestFiles', true),
+            excludeExtensions: config.get<string[]>('topics.excludeExtensions', [...DEFAULT_TOPIC_EXCLUDED_EXTENSIONS]),
             signal: controller.signal,
             log: (l) => output.appendLine(l),
             onProgress: (p: TopicProgress) => {
@@ -755,6 +757,9 @@ async function showTopicResult(result: TopicResult, output: vscode.OutputChannel
   const keywords = vscode.l10n.t('Show Keywords');
   const reveal = vscode.l10n.t('Reveal in File Explorer');
   let text = vscode.l10n.t('Found {0} topics. Saved the topic shares of {1} before files to {2}.', result.topics, result.files, path.basename(result.csv));
+  if (result.excludedFiles > 0) {
+    text += ' ' + vscode.l10n.t('{0} files were left out because of their extension (warnPriority.topics.excludeExtensions).', result.excludedFiles);
+  }
   if (result.testFiles > 0) {
     text += ' ' + vscode.l10n.t('{0} test files were left out.', result.testFiles);
   }

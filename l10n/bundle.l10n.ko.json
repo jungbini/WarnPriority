@@ -55,6 +55,7 @@
   "Creating the Python environment...": "Python 환경 만드는 중...",
   "Show Keywords": "키워드 보기",
   "Found {0} topics. Saved the topic shares of {1} before files to {2}.": "토픽 {0}개를 찾았습니다. 수정 전 파일 {1}개의 토픽 비율을 {2}에 저장했습니다.",
+  "{0} files were left out because of their extension (warnPriority.topics.excludeExtensions).": "확장자 설정(warnPriority.topics.excludeExtensions)에 따라 파일 {0}개는 제외했습니다.",
   "{0} test files were left out.": "테스트 파일 {0}개는 제외했습니다.",
   "Code that belongs to no topic is in the \"Unclassified\" column.": "어느 토픽에도 속하지 않은 코드는 마지막 \"Unclassified\" 열에 있습니다.",
   "An NVIDIA GPU ({0}) was found, but the PyTorch of warnPriority.topics.pythonPath is a CPU build, so embeddings are computed on the CPU. Install the CUDA build of PyTorch in that Python (see the README).": "NVIDIA GPU({0})가 있지만 warnPriority.topics.pythonPath에 지정한 Python의 PyTorch가 CPU용이라 임베딩을 CPU로 계산합니다. 그 Python에 PyTorch CUDA 빌드를 설치하세요(README 참고).",

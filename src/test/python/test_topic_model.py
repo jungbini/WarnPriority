@@ -115,9 +115,23 @@ class TestFiles(unittest.TestCase):
             path = os.path.join(d, 'r.json')
             with open(path, 'w') as f:
                 json.dump(result, f)
-            files, skipped = tm.before_files(path, include_tests=False)
-            self.assertEqual(([n for n, _ in files], skipped), (['abc/before/src/main/A.java'], 1))
+            files, skipped, excluded = tm.before_files(path, include_tests=False)
+            self.assertEqual(([n for n, _ in files], skipped, excluded), (['abc/before/src/main/A.java'], 1, 0))
             self.assertEqual(len(tm.before_files(path, include_tests=True)[0]), 2)
+
+    def test_before_files_can_leave_out_extensions(self):
+        with tempfile.TemporaryDirectory() as d:
+            names = ['src/A.java', 'web/app.ts', 'web/View.TSX', 'types/index.d.ts', 'web/app.js', 'web/app.spec.ts', 'docs/tsconfig']
+            for name in names:
+                os.makedirs(os.path.dirname(os.path.join(d, 'abc', 'before', name)), exist_ok=True)
+                open(os.path.join(d, 'abc', 'before', name), 'w').close()
+            path = os.path.join(d, 'r.json')
+            with open(path, 'w') as f:
+                json.dump([{'sha': 'abc', 'files': [{'file': n, 'diff': []} for n in names]}], f)
+            files, skipped, excluded = tm.before_files(path, include_tests=False, exclude_extensions=tm.normalize_extensions(' ts, .TSX ,'))
+            self.assertEqual([n for n, _ in files], ['abc/before/src/A.java', 'abc/before/web/app.js', 'abc/before/docs/tsconfig'])
+            self.assertEqual((skipped, excluded), (0, 4))  # app.spec.ts is left out for its extension first
+            self.assertEqual(tm.normalize_extensions(''), [])
 
 
 class Aggregation(unittest.TestCase):
@@ -161,8 +175,8 @@ class Aggregation(unittest.TestCase):
             path = os.path.join(d, 'r.json')
             with open(path, 'w') as f:
                 json.dump(result, f)
-            files, skipped = tm.before_files(path)
-            self.assertEqual(([n for n, _ in files], skipped), (['abc/before/src/Old.java'], 0))
+            files, skipped, excluded = tm.before_files(path)
+            self.assertEqual(([n for n, _ in files], skipped, excluded), (['abc/before/src/Old.java'], 0, 0))
             with open(path, 'w') as f:
                 json.dump({'not': 'a result'}, f)
             with self.assertRaises(ValueError):

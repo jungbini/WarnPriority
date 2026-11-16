@@ -1,9 +1,9 @@
 import { strict as assert } from 'assert';
 import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { test } from 'node:test';
-import { cudaBuildsFor, parseNvidiaSmi, parseProgressLine, TOPIC_REQUIREMENTS, TOPIC_SCRIPT } from '../core/topics';
+import { cudaBuildsFor, DEFAULT_TOPIC_EXCLUDED_EXTENSIONS, normalizeExtensions, parseNvidiaSmi, parseProgressLine, TOPIC_REQUIREMENTS, TOPIC_SCRIPT } from '../core/topics';
 
 const python = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).status === 0);
 
@@ -45,4 +45,11 @@ test('CUDA builds are tried newest first, only those the driver supports', () =>
   assert.deepEqual(cudaBuildsFor('12.8'), ['cu126', 'cu118']);
   assert.deepEqual(cudaBuildsFor('12.4'), ['cu118']);
   assert.deepEqual(cudaBuildsFor('11.4'), []);
+});
+
+test('TypeScript is left out of topic modeling by default; extensions are normalized', () => {
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+  assert.deepEqual(pkg.contributes.configuration.properties['warnPriority.topics.excludeExtensions'].default, [...DEFAULT_TOPIC_EXCLUDED_EXTENSIONS]);
+  assert.deepEqual([...DEFAULT_TOPIC_EXCLUDED_EXTENSIONS], ['ts', 'tsx', 'mts', 'cts']);
+  assert.deepEqual(normalizeExtensions([' .TS', 'tsx', '', 'ts', '..mts', 'a,b', 'd.ts']), ['ts', 'tsx', 'mts']);
 });

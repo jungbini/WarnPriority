@@ -293,6 +293,8 @@ File Name,Topic #1 (peeked, jj, pos, stack, cur),Topic #2 (variable, resolve, ow
    **테스트 파일은 기본으로 뺍니다**(`warnPriority.topics.excludeTestFiles`). 테스트 폴더(`test/`, `tests/`, `__tests__/`, `spec/`, `androidTest/` 등)에 있거나
    테스트 이름 규칙을 따르는 파일(`*Test.java`, `*Tests.cs`, `*IT.java`, `test_*.py`, `*_test.go`, `*.spec.ts`, `*_spec.rb` 등)이 해당합니다.
    테스트를 넣으면 테스트 예제 데이터(`bag`, `truck`, `sandwiches` 같은 이름)가 따로 토픽을 이룹니다.
+   **TypeScript 파일도 기본으로 뺍니다**(`warnPriority.topics.excludeExtensions`, 기본값 `ts`, `tsx`, `mts`, `cts`; `ts`는 `.d.ts`도 포함).
+   PMD로 분석할 수 없어 warning 결과와 함께 쓸 수 없기 때문입니다. 다른 확장자도 이 목록에 넣으면 빠지고, 빈 목록이면 수집한 모든 파일을 씁니다.
 2. **코드 조각**: 한 파일에는 여러 기능이 있고 긴 파일은 모델 입력 길이를 넘으므로, 파일을 빈 줄 기준 블록(보통 메서드 하나 + 주석)으로 나눕니다.
    10줄 미만 블록은 다음 블록과 합치고 60줄을 넘는 블록은 자릅니다. 라이선스 머리말과 `import`/`package`/`#include` 줄은 뺍니다(기능이 아니라 의존성이고, 따로 모이면 "import 토픽"이 생기므로).
    같은 파일의 여러 버전에서 바뀌지 않은 조각은 똑같으므로, **같은 조각은 한 번만** 임베딩·클러스터링합니다(자주 바뀐 파일이 토픽을 독차지하지 않도록).
@@ -380,6 +382,7 @@ CPU에서는 대략 서로 다른 코드 조각 3,400개에 16분 정도이므�
 | `warnPriority.topics.minTopicSize` | `0` (자동) | 토픽 최소 크기(코드 조각 수). `0`: 서로 다른 조각 수의 약 1%. 크게 하면 토픽 수 K가 줄어듦 |
 | `warnPriority.topics.extraStopwords` | `[]` | 토픽 키워드에서 추가로 뺄 단어 |
 | `warnPriority.topics.excludeTestFiles` | `true` | 테스트 파일은 토픽 모델링에서 뺌 |
+| `warnPriority.topics.excludeExtensions` | `["ts", "tsx", "mts", "cts"]` | 토픽 모델링에서 뺄 파일 확장자(점 없이). 기본값은 PMD로 분석할 수 없는 TypeScript. 빈 목록이면 모두 포함 |
 | `warnPriority.gitPath` | `""` | Git 실행 파일 경로. 비우면 VS Code Git 확장이 쓰는 Git 사용 |
 
 
@@ -442,7 +445,8 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   npm run collect -- topics results/google_gson/google_gson_fix-bug_20261107-104155.json --python python3
   ```
 
-  옵션: `--python <경로>`, `--model <모델>`, `--min-topic-size N`, `--extra-stopwords a,b`, `--include-tests`(테스트 파일도 포함).
+  옵션: `--python <경로>`, `--model <모델>`, `--min-topic-size N`, `--extra-stopwords a,b`, `--include-tests`(테스트 파일도 포함),
+  `--exclude-extensions ts,tsx`(뺄 확장자, 기본값 `ts,tsx,mts,cts`; `none`이면 모두 포함).
   스크립트를 직접 쓸 수도 있습니다: `python resources/topics/topic_model.py <result.json> --help`
 - 실제 PMD로 도는 테스트까지 실행하려면: `WARNPRIORITY_PMD_HOME=<PMD 폴더> npm test` (없으면 그 테스트만 건너뜀)
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)

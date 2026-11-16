@@ -7,7 +7,8 @@ Pipeline
   1. Files: the "before" version of every file in the result JSON
      (<project>/<sha>/before/<oldFile or file>; added files have none).
      Test files (test/ directories, *Test.java, test_*.py, *.spec.ts, ...)
-     are left out unless --include-tests is given.
+     are left out unless --include-tests is given, and so are files with an
+     extension listed in --exclude-extensions (e.g. ts,tsx).
   2. Chunks: each file is split into chunks of code (blocks separated by blank
      lines, merged up to --max-chunk-lines), because a file usually implements
      several functions and long files exceed the model context. License
@@ -252,9 +253,22 @@ def is_test_file(repo_path: str) -> bool:
     return bool(TEST_FILE_NAME.search(parts[-1]))
 
 
-def before_files(result_file: str, include_tests: bool = True) -> Tuple[List[Tuple[str, str]], int]:
-    """(name for the CSV, absolute path) of every saved "before" file, in result order, and the
-    number of test files left out (when include_tests is False)."""
+def has_extension(path: str, extensions: Iterable[str]) -> bool:
+    """Whether the file name ends with one of the extensions (without dot, any case; "ts" also covers ".d.ts")."""
+    name = path.rsplit('/', 1)[-1].lower()
+    return any(name.endswith('.' + e) for e in extensions)
+
+
+def normalize_extensions(text: str) -> List[str]:
+    """"ts, .TSX" -> ["ts", "tsx"]."""
+    return [e.strip().lstrip('.').lower() for e in text.split(',') if e.strip().lstrip('.')]
+
+
+def before_files(result_file: str, include_tests: bool = True,
+                 exclude_extensions: Sequence[str] = ()) -> Tuple[List[Tuple[str, str]], int, int]:
+    """(name for the CSV, absolute path) of every saved "before" file, in result order, the
+    number of test files left out (when include_tests is False) and the number of files left
+    out because of their extension."""
     with open(result_file, encoding='utf-8') as f:
         data = json.load(f)
     if not isinstance(data, list) or not all(isinstance(c, dict) and 'sha' in c and 'files' in c for c in data):
@@ -262,6 +276,7 @@ def before_files(result_file: str, include_tests: bool = True) -> Tuple[List[Tup
     project = os.path.dirname(os.path.abspath(result_file))
     out: List[Tuple[str, str]] = []
     skipped_tests = 0
+    skipped_extension = 0
     for commit in data:
         for f in commit['files']:
             repo_path = f.get('oldFile') or f['file']
@@ -269,11 +284,14 @@ def before_files(result_file: str, include_tests: bool = True) -> Tuple[List[Tup
             path = os.path.join(project, *rel.split('/'))
             if not os.path.isfile(path):
                 continue
+            if has_extension(repo_path, exclude_extensions):
+                skipped_extension += 1
+                continue
             if not include_tests and is_test_file(repo_path):
                 skipped_tests += 1
                 continue
             out.append((rel, path))
-    return out, skipped_tests
+    return out, skipped_tests, skipped_extension
 
 
 def file_topic_shares(chunk_files: Sequence[int], chunk_lines: Sequence[int], chunk_topics: Sequence[int],
@@ -354,6 +372,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument('--assign-outliers', action='store_true',
                    help='put chunks that belong to no topic into their nearest topic instead of an "Unclassified" column')
     p.add_argument('--include-tests', action='store_true', help='also model test files (left out by default)')
+    p.add_argument('--exclude-extensions', default='', help='comma-separated file extensions to leave out, e.g. ts,tsx')
     p.add_argument('--nr-topics', default='none', help='"none": the topics HDBSCAN finds (default); "auto": also merge similar topics; or a number')
     args = p.parse_args(argv)
 
@@ -364,11 +383,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     keywords_csv = (keywords_csv[: -len('.topics')] if keywords_csv.endswith('.topics') else keywords_csv) + '.topic-keywords.csv'
 
     # 1-2. Files and chunks -------------------------------------------------
-    files, skipped_tests = before_files(result_file, include_tests=args.include_tests)
+    excluded_extensions = normalize_extensions(args.exclude_extensions)
+    files, skipped_tests, skipped_extension = before_files(result_file, include_tests=args.include_tests,
+                                                          exclude_extensions=excluded_extensions)
+    if skipped_extension:
+        log(f'{skipped_extension} files left out by extension ({", ".join(excluded_extensions)})')
     if skipped_tests:
         log(f'{skipped_tests} test files left out (--include-tests keeps them)')
     if not files:
-        raise SystemExit('No "before" files to model' + (' (all of them are test files)' if skipped_tests else ' (only added files?)') + '.')
+        reason = ' (all of them are test files or have an excluded extension)' if skipped_tests or skipped_extension else ' (only added files?)'
+        raise SystemExit('No "before" files to model' + reason + '.')
     progress('read', files=len(files))
     chunk_files: List[int] = []
     chunk_lines: List[int] = []
@@ -491,7 +515,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         w.writerows(keyword_rows)
 
     unclassified = sum(1 for x in topics if x == UNCLASSIFIED)
-    progress('done', topics=len(found), files=len(files), testFiles=skipped_tests, chunks=len(chunk_keys),
+    progress('done', topics=len(found), files=len(files), testFiles=skipped_tests,
+             excludedFiles=skipped_extension, chunks=len(chunk_keys),
              uniqueChunks=len(docs), outliers=outliers, unclassifiedChunks=unclassified, device=device, csv=out_csv,
              keywordsCsv=keywords_csv)
     return 0

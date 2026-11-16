@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0
+
+- 토픽 모델링에서 **TypeScript 파일 제외**(새 설정 `warnPriority.topics.excludeExtensions`, 기본값 `ts`, `tsx`, `mts`, `cts`; `ts`는 `.d.ts`도 포함).
+  PMD로 분석할 수 없는 파일이라 warning 결과와 함께 쓸 수 없으므로. 다른 확장자도 넣을 수 있고, 빈 목록이면 모두 포함
+- 완료 알림·로그·CLI 출력에 확장자 때문에 뺀 파일 수 표시. CLI 옵션 `--exclude-extensions ts,tsx|none`
+
 ## 0.14.0
 
 - **위치만 옮겨진 warning을 같은 warning으로 판정**: 사라짐+생김으로 기록되던 경우를 유지로 봄

@@ -11,7 +11,7 @@
  *        Runs PMD on the saved before/after files and writes <result>.pmd.json and <result>.pmd-rules.csv.
  *
  *   node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10]
- *        [--extra-stopwords a,b] [--include-tests]
+ *        [--extra-stopwords a,b] [--include-tests] [--exclude-extensions ts,tsx|none]
  *        Topic modeling (BERTopic) of the "before" files; writes <result>.topics.csv and <result>.topic-keywords.csv.
  *        The Python needs: pip install -r resources/topics/requirements.txt
  */
@@ -23,7 +23,7 @@ import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { installPmd, locatePmd } from './core/pmdInstaller';
 import { ALL_RULES } from './core/pmdRunner';
-import { runTopicModel } from './core/topics';
+import { DEFAULT_TOPIC_EXCLUDED_EXTENSIONS, runTopicModel } from './core/topics';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
 
@@ -50,7 +50,7 @@ function usage(): never {
       '       node out/cli.js pmd <result.json> [--ruleset all|<rulesets>] [--pmd-home dir] [--java path]\n' +
       '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.\n' +
       '\n' +
-      '       node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10] [--extra-stopwords a,b] [--include-tests]\n' +
+      '       node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10] [--extra-stopwords a,b] [--include-tests] [--exclude-extensions ts,tsx,mts,cts|none]\n' +
       '  Topic modeling (BERTopic) of the before files; the Python needs resources/topics/requirements.txt installed.',
   );
   process.exit(2);
@@ -186,6 +186,12 @@ async function runTopicsCommand(resultFile: string, flags: Record<string, string
     minTopicSize: flags['min-topic-size'] ? parseInt(flags['min-topic-size'] as string, 10) : undefined,
     extraStopwords: typeof flags['extra-stopwords'] === 'string' ? flags['extra-stopwords'].split(',') : [],
     includeTests: flags['include-tests'] === true,
+    excludeExtensions:
+      typeof flags['exclude-extensions'] === 'string'
+        ? flags['exclude-extensions'] === 'none'
+          ? []
+          : flags['exclude-extensions'].split(',')
+        : [...DEFAULT_TOPIC_EXCLUDED_EXTENSIONS],
     signal: controller.signal,
     log: quiet ? undefined : (l) => console.error(l),
     onProgress: quiet
@@ -204,6 +210,7 @@ async function runTopicsCommand(resultFile: string, flags: Record<string, string
   console.log(
     `Done: ${result.topics} topics over ${result.files} before files (${result.uniqueChunks} distinct code chunks` +
       (result.unclassifiedChunks > 0 ? `, ${result.unclassifiedChunks} unclassified` : '') +
+      (result.excludedFiles > 0 ? `; ${result.excludedFiles} files left out by extension` : '') +
       (result.testFiles > 0 ? `; ${result.testFiles} test files left out` : '') +
       ').',
   );
