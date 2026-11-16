@@ -20,5 +20,6 @@
   "config.topics.minTopicSize": "토픽 하나의 최소 크기(코드 조각 수, HDBSCAN `min_cluster_size`)이며, 토픽 수 K는 이 값에 따라 자동으로 정해집니다. `0`(기본값): 서로 다른 코드 조각 수의 약 1%(최소 10)로 정해, 저장소 크기와 관계없이 K가 읽기 좋은 수준으로 유지됩니다. 크게 하면 더 적고 넓은 토픽이 나옵니다.",
   "config.topics.extraStopwords": "기본 코드 stopword(언어 예약어, `return`·`self`·`null` 같은 공통 토큰)에 더해 토픽 키워드에서 뺄 단어입니다.",
   "config.topics.excludeTestFiles": "테스트 파일은 토픽 모델링에서 뺍니다. 테스트 폴더(`test/`, `tests/`, `__tests__/`, `spec/`, `androidTest/` 등)에 있거나 테스트 이름 규칙을 따르는 파일(`*Test.java`, `*Tests.cs`, `test_*.py`, `*_test.go`, `*.spec.ts` 등)이 해당합니다. 넣으면 테스트의 예제 데이터(`bag`, `truck` 등)가 따로 토픽을 이룹니다.",
-  "config.topics.excludeExtensions": "토픽 모델링에서 뺄 파일 확장자(점 없이)입니다. 기본값: PMD로 분석할 수 없는 TypeScript(`ts`, `tsx`, `mts`, `cts`; `ts`는 `.d.ts`도 포함). 빈 목록이면 수집한 모든 파일을 토픽 모델링합니다."
+  "config.topics.excludeExtensions": "토픽 모델링에서 뺄 파일 확장자(점 없이)입니다. 기본값: PMD로 분석할 수 없는 TypeScript(`ts`, `tsx`, `mts`, `cts`; `ts`는 `.d.ts`도 포함). 빈 목록이면 수집한 모든 파일을 토픽 모델링합니다.",
+  "command.prioritizeWarnings.title": "토픽별 warning 우선순위 (TOP)"
 }

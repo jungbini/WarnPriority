@@ -2,7 +2,7 @@
   "name": "warnpriority",
   "displayName": "WarnPriority",
   "description": "%extension.description%",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "publisher": "jungbini",
   "repository": {
     "type": "git",
@@ -44,6 +44,11 @@
       {
         "command": "warnPriority.topicModel",
         "title": "%command.topicModel.title%",
+        "category": "WarnPriority"
+      },
+      {
+        "command": "warnPriority.prioritizeWarnings",
+        "title": "%command.prioritizeWarnings.title%",
         "category": "WarnPriority"
       }
     ],
@@ -195,6 +200,11 @@
         },
         {
           "command": "warnPriority.topicModel",
+          "when": "resourceExtname == .json",
+          "group": "9_warnPriority"
+        },
+        {
+          "command": "warnPriority.prioritizeWarnings",
           "when": "resourceExtname == .json",
           "group": "9_warnPriority"
         }

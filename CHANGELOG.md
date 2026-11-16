@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.0
+
+- **토픽별 warning 우선순위(TOP)** 명령 추가(`WarnPriority: 토픽별 warning 우선순위 (TOP)`, CLI `prioritize`):
+  파일별 warning removal rate(`<결과>.pmd-rules.csv`)와 파일별 토픽 비율(`<결과>.topics.csv`)로
+  `W_c[k] = Σ_b TC_k(b) × RL_c(b)`(TC는 토픽마다 합이 1이 되도록 정규화, RL = Warning Removal Rate)를 계산해
+  토픽마다 PMD 규칙의 우선순위 목록을 `<결과>.topic-warnings.csv`에 저장.
+  RL을 원래 TOP 논문의 removal likelihood(Removed / Before)로 계산한 가중치도 함께 기록
+- PMD 분석이나 토픽 모델링 결과가 없으면 알려 주고, 버튼으로 그 단계를 바로 실행
+
 ## 0.15.0
 
 - 토픽 모델링에서 **TypeScript 파일 제외**(새 설정 `warnPriority.topics.excludeExtensions`, 기본값 `ts`, `tsx`, `mts`, `cts`; `ts`는 `.d.ts`도 포함).

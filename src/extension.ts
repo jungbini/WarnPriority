@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { analyzeWithPmd, PmdAnalysisResult } from './core/analyzeWithPmd';
+import { MissingInputError, prioritizeWarnings } from './core/prioritize';
 import { collectCommitChanges, CollectResult, defaultOutputFileName, projectDirName, SOURCE_FILE_EXTENSIONS } from './core/collector';
 import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
@@ -39,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('warnPriority.clearRepositoryCache', () => clearCache(context, output)),
     vscode.commands.registerCommand('warnPriority.runPmd', (uri?: vscode.Uri) => runPmdCommand(context, output, uri)),
     vscode.commands.registerCommand('warnPriority.topicModel', (uri?: vscode.Uri) => runTopicsCommand(context, output, uri)),
+    vscode.commands.registerCommand('warnPriority.prioritizeWarnings', (uri?: vscode.Uri) => runPrioritizeCommand(context, output, uri)),
   );
 }
 
@@ -482,6 +484,74 @@ async function showPmdResult(result: PmdAnalysisResult, output: vscode.OutputCha
     await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(result.rulesFile), { preview: false });
   } else if (choice === reveal) {
     await vscode.commands.executeCommand('revealFileInOS', uri);
+  }
+}
+
+/**
+ * Topic-based warning prioritization (TOP): from <result>.pmd-rules.csv and
+ * <result>.topics.csv, a priority list of PMD rules per topic in
+ * <result>.topic-warnings.csv.
+ */
+async function runPrioritizeCommand(context: vscode.ExtensionContext, output: vscode.OutputChannel, uri?: vscode.Uri): Promise<void> {
+  if (running) {
+    vscode.window.showWarningMessage(vscode.l10n.t('Another WarnPriority task is running. Wait for it to finish or cancel it.'));
+    return;
+  }
+  const config = vscode.workspace.getConfiguration('warnPriority');
+  const resultFile = uri?.scheme === 'file' ? uri.fsPath : await pickResultFile(config, vscode.l10n.t('Select a result file to prioritize its warnings by topic'));
+  if (!resultFile) {
+    return;
+  }
+  if (/\.pmd\.json$/i.test(resultFile)) {
+    vscode.window.showErrorMessage(vscode.l10n.t('Select a result JSON written by "Collect Changed Code", not a .pmd.json file.'));
+    return;
+  }
+  output.appendLine(`[${new Date().toLocaleString()}] WarnPriority v${context.extension.packageJSON.version} | warning prioritization by topic of ${resultFile}`);
+  try {
+    const r = await prioritizeWarnings(resultFile);
+    output.appendLine(JSON.stringify({ topics: r.topics.length, files: r.files, ruleRows: r.ruleRows, ruleRowsWithoutTopics: r.ruleRowsWithoutTopics, outputFile: r.outputFile }));
+    if (r.files === 0) {
+      vscode.window.showWarningMessage(
+        vscode.l10n.t('No file has both a topic modeling result and PMD rule rows. Run both on the same result file (topic modeling leaves out test files).'),
+      );
+      return;
+    }
+    const uriOut = vscode.Uri.file(r.outputFile);
+    await Promise.resolve(vscode.commands.executeCommand('vscode.open', uriOut, { preview: false })).catch((e: Error) =>
+      output.appendLine(`Could not open ${r.outputFile}: ${e.message}`),
+    );
+    let text = vscode.l10n.t(
+      'Prioritized the warnings of {0} topics from {1} files ({2} rule rows). Saved to {3}.',
+      new Set(r.rows.map((x) => x.topic)).size,
+      r.files,
+      r.ruleRows,
+      path.basename(r.outputFile),
+    );
+    if (r.ruleRowsWithoutTopics > 0) {
+      text += ' ' + vscode.l10n.t('{0} rule rows were left out because their files have no topic modeling result (e.g. test files).', r.ruleRowsWithoutTopics);
+    }
+    const reveal = vscode.l10n.t('Reveal in File Explorer');
+    if ((await vscode.window.showInformationMessage(text, reveal)) === reveal) {
+      await vscode.commands.executeCommand('revealFileInOS', uriOut);
+    }
+  } catch (e) {
+    if (e instanceof MissingInputError) {
+      const pmd = e.step === 'pmd';
+      const run = pmd ? vscode.l10n.t('Analyze with PMD') : vscode.l10n.t('Run Topic Modeling');
+      const message = pmd
+        ? vscode.l10n.t('Run the PMD analysis on this result file first ({0} was not found).', path.basename(e.file))
+        : vscode.l10n.t('Run topic modeling on this result file first ({0} was not found).', path.basename(e.file));
+      if ((await vscode.window.showWarningMessage(message, run)) === run) {
+        await vscode.commands.executeCommand(pmd ? 'warnPriority.runPmd' : 'warnPriority.topicModel', vscode.Uri.file(resultFile));
+      }
+      return;
+    }
+    const message = (e as Error).message;
+    output.appendLine(`ERROR: ${message}`);
+    const showLog = vscode.l10n.t('Show Log');
+    if ((await vscode.window.showErrorMessage(vscode.l10n.t('WarnPriority: warning prioritization failed. {0}', message.split('\n')[0]), showLog)) === showLog) {
+      output.show();
+    }
   }
 }
 

@@ -1,11 +1,12 @@
 # WarnPriority
 
-GitHub 저장소의 커밋 이력에서 정적 분석 warning의 변화를 연구하기 위한 VS Code 확장입니다. 세 단계로 씁니다.
+GitHub 저장소의 커밋 이력에서 정적 분석 warning의 변화를 연구하기 위한 VS Code 확장입니다. 네 단계로 씁니다.
 
 1. **변경 코드 수집** — 커밋 메시지에 키워드(예: `fix, bug`)가 들어간 커밋을 찾아, 바뀐 **줄 번호**를 JSON으로 저장하고 바뀐 소스 파일의 **수정 전/후 버전**을 커밋별 폴더에 꺼내 둡니다.
 2. **PMD 분석** — 수정 전/후 파일에 PMD(Java 규칙 전체)를 실행해, 커밋으로 **사라진 warning과 새로 생긴 warning**을 기록하고,
    규칙별로 수정된 코드의 warning 수(수정 전/후)와 **warning removal rate**를 구합니다.
 3. **토픽 모델링** — 수정 전 소스 코드 전체를 CodeRankEmbed + BERTopic으로 토픽 모델링해, **파일별 기능(토픽) 비율**을 CSV로 정리합니다.
+4. **토픽별 warning 우선순위** — 2단계의 파일별 warning removal rate와 3단계의 파일별 토픽 비율로, **토픽마다 PMD 규칙의 우선순위 목록**을 만듭니다(TOP).
 
 ## 설치
 
@@ -29,6 +30,7 @@ VS Code 확장(Extensions) 보기 → `···` → **VSIX에서 설치(Install f
 | 1 | `GitHub 커밋에서 변경된 코드 수집` | `Collect Changed Code from GitHub Commits` | `<결과>.json` + 커밋별 `before/`·`after/` 폴더 |
 | 2 | `수집 결과를 PMD로 분석` | `Analyze Collected Results with PMD` | `<결과>.pmd.json` |
 | 3 | `수정 전 코드 토픽 모델링 (BERTopic)` | `Topic Modeling of Before Files (BERTopic)` | `<결과>.topics.csv`, `<결과>.topic-keywords.csv` |
+| 4 | `토픽별 warning 우선순위 (TOP)` | `Prioritize Warnings by Topic (TOP)` | `<결과>.topic-warnings.csv` |
 | — | `캐시된 저장소 복제본 삭제` | `Clear Cached Repository Clones` | 내려받아 둔 저장소 삭제 |
 
 ### 1. 변경 코드 수집
@@ -49,6 +51,11 @@ VS Code 확장(Extensions) 보기 → `···` → **VSIX에서 설치(Install f
 - **`WarnPriority: 수정 전 코드 토픽 모델링 (BERTopic)`** 실행(결과 JSON 선택), 또는 탐색기에서 결과 JSON 우클릭.
 - 결과 `<결과>.topics.csv`가 열리고, 알림의 **키워드 보기**로 토픽별 키워드를 볼 수 있습니다. 자세한 내용은 [수정 전 코드 토픽 모델링](#수정-전-코드-토픽-모델링-bertopic)을 보세요.
 
+### 4. 토픽별 warning 우선순위
+
+- 2·3단계를 같은 결과 JSON에 실행한 뒤, **`WarnPriority: 토픽별 warning 우선순위 (TOP)`** 실행(결과 JSON 선택), 또는 탐색기에서 결과 JSON 우클릭.
+- 결과 `<결과>.topic-warnings.csv`가 열립니다. 계산 방법은 [토픽별 warning 우선순위 (TOP)](#토픽별-warning-우선순위-top)를 보세요.
+
 ### 결과 폴더
 
 결과는 기본적으로 `<워크스페이스>/warnpriority-output/` 아래, 저장소별 폴더에 저장됩니다(열린 폴더가 없으면 저장할 폴더를 묻습니다. 위치는 `warnPriority.outputDirectory`로 바꿀 수 있음).
@@ -62,6 +69,7 @@ warnpriority-output/
    ├─ google_gson_fix-bug_20261107-104155.pmd-rules.csv     ← 2단계: 파일·규칙별 warning removal rate 표
    ├─ google_gson_fix-bug_20261107-104155.topics.csv          ← 3단계: 파일별 토픽 비율(%)
    ├─ google_gson_fix-bug_20261107-104155.topic-keywords.csv  ← 3단계: 토픽별 키워드
+   ├─ google_gson_fix-bug_20261107-104155.topic-warnings.csv  ← 4단계: 토픽별 warning 우선순위
    ├─ .topic-embeddings/                            ← 3단계 임베딩 캐시
    ├─ 094f5003ce5f6d2fb65457bee9c78b9d53d25308/     ← 커밋 해시 폴더
    │  ├─ before/gson/src/main/java/com/google/gson/Gson.java   ← 수정 전 (parent 시점)
@@ -363,6 +371,53 @@ CPU만 쓰면 오래 걸립니다. 4코어 CPU에서 측정한 값:
 CPU에서는 대략 서로 다른 코드 조각 3,400개에 16분 정도이므로, 수집한 커밋이 많으면 그에 비례해 늘어납니다(시작할 때 출력 창 로그에 조각 수가 나옵니다).
 진행 상황은 알림에 표시되고 언제든 취소할 수 있으며, 그때까지 계산한 임베딩은 캐시에 남아 다음 실행에 이어서 씁니다.
 
+## 토픽별 warning 우선순위 (TOP)
+
+파일별 warning removal rate(`<결과>.pmd-rules.csv`)와 파일별 토픽 비율(`<결과>.topics.csv`)로, **토픽마다 PMD 규칙(warning 범주)의 우선순위 목록**을 만듭니다.
+"토픽 k와 관련된 파일에서 규칙 c의 warning이 자주 제거되었다면, 토픽 k의 목록에서 c의 가중치를 높인다"는 TOP(Topic-oriented warning prioritization) 방식입니다.
+
+```
+W_c[k] = Σ_b ( TC_k(b) × RL_c(b) )
+```
+
+| 기호 | 뜻 | 값 |
+| --- | --- | --- |
+| `b` | 수정 전 파일(커밋 하나의 파일 하나) | 토픽 모델링 결과와 규칙별 표의 행이 **모두 있는** 파일 |
+| `TC_k(b)` | 파일 b의 토픽 k 비율 | `topics.csv`의 비율을 **토픽마다 합이 1이 되도록 정규화**(모든 b에 대해 Σ TC_k(b) = 1) |
+| `RL_c(b)` | 파일 b에서 규칙 c의 제거 정도 | `pmd-rules.csv`의 **Warning Removal Rate** = (Before − After) / Before |
+| `W_c[k]` | 토픽 k에서 규칙 c의 가중치 | 클수록 우선순위가 높음 |
+
+- 파일 b에 규칙 c의 행이 없으면(수정 전 그 규칙 위반이 없었음) 그 파일은 W_c[k]에 더하지 않습니다.
+- `Unclassified`(미분류) 열은 토픽이 아니므로 목록을 만들지 않습니다.
+- 토픽 모델링은 테스트 파일을 빼므로(`warnPriority.topics.excludeTestFiles`), 테스트 파일의 규칙 행은 계산에 쓰이지 않습니다(완료 알림에 개수 표시).
+
+google/gson `fix, bug`(커밋 380개)의 결과 일부(파일 549개, 규칙 행 1,747개로 토픽 20개의 목록):
+
+```csv
+Topic,Keywords,Rank,Rule,Ruleset,Priority,Weight,Weight (Removed/Before),Files,Before,After,Removed,Added
+Topic #5,"filter, accessible, constructor, reflection, access",1,AvoidAccessibilityAlteration,Error Prone,3,0.135286,0.135286,7,8,1,7,0
+Topic #5,"filter, accessible, constructor, reflection, access",2,UselessParentheses,Code Style,4,0.088087,0.088087,5,6,1,5,0
+Topic #5,"filter, accessible, constructor, reflection, access",3,AtLeastOneConstructor,Code Style,3,0.086078,0.086078,4,4,1,3,0
+Topic #5,"filter, accessible, constructor, reflection, access",4,ShortVariable,Code Style,3,0.083783,0.145472,9,13,8,10,5
+Topic #16,"date, style, time, format, timestamp",1,ClassWithOnlyPrivateConstructorsShouldBeFinal,Design,1,0.171696,0.171696,6,22,19,3,0
+Topic #16,"date, style, time, format, timestamp",2,MethodArgumentCouldBeFinal,Code Style,3,0.168312,0.191397,21,65,49,27,11
+```
+
+| 열 | 내용 |
+| --- | --- |
+| `Topic` / `Keywords` | 토픽 번호와 대표 키워드(`topics.csv`의 열 제목) |
+| `Rank` | 토픽 안에서의 순위(1이 가장 높음). Weight가 큰 순, 같으면 `Weight (Removed/Before)`가 큰 순 |
+| `Rule` / `Ruleset` / `Priority` | PMD 규칙 이름 / 카테고리 / PMD 우선순위 |
+| `Weight` | W_c[k] (RL = Warning Removal Rate). 소수점 6자리 |
+| `Weight (Removed/Before)` | RL 대신 원래 TOP 논문의 removal likelihood(사라진 수 / 전체 수 = Removed / Before)로 계산한 값. 참고용 |
+| `Files` | 이 토픽 비율이 0보다 크고 이 규칙의 행이 있는 파일 수 |
+| `Before` / `After` / `Removed` / `Added` | 그 파일들의 규칙별 표 값 합계 |
+
+- **Weight와 Weight (Removed/Before)의 차이**: Warning Removal Rate는 새로 생긴 warning(Added)만큼 깎이고 음수도 될 수 있습니다(늘어난 파일은 가중치를 낮춤).
+  Removed / Before는 0~1이고 새로 생긴 warning을 반영하지 않습니다. Added가 0이면 두 값이 같습니다(예: 위의 `AvoidAccessibilityAlteration`).
+- **토픽 사이 비교**: TC를 토픽마다 정규화하므로, 토픽 안의 순위뿐 아니라 토픽끼리 Weight를 비교할 수도 있습니다(TOP 논문의 전체 목록처럼 Weight 순으로 섞어 정렬).
+- **표본 크기**: `Files`가 1~2개인 규칙은 그 파일 몇 개의 결과가 그대로 가중치가 됩니다. 순위를 볼 때 `Files`와 `Before`도 함께 보세요.
+
 ## 설정
 
 | 설정 | 기본값 | 설명 |
@@ -448,6 +503,11 @@ npm test             # 단위 + 통합 테스트 (로컬 임시 저장소 사용
   옵션: `--python <경로>`, `--model <모델>`, `--min-topic-size N`, `--extra-stopwords a,b`, `--include-tests`(테스트 파일도 포함),
   `--exclude-extensions ts,tsx`(뺄 확장자, 기본값 `ts,tsx,mts,cts`; `none`이면 모두 포함).
   스크립트를 직접 쓸 수도 있습니다: `python resources/topics/topic_model.py <result.json> --help`
+- 토픽별 warning 우선순위(PMD 분석과 토픽 모델링을 먼저 실행):
+
+  ```bash
+  npm run collect -- prioritize results/google_gson/google_gson_fix-bug_20261107-104155.json
+  ```
 - 실제 PMD로 도는 테스트까지 실행하려면: `WARNPRIORITY_PMD_HOME=<PMD 폴더> npm test` (없으면 그 테스트만 건너뜀)
 - `.vsix` 패키지 만들기: `npm run package` (LICENSE 파일이 없으면 계속할지 묻습니다)
 - 릴리스 만들기: `package.json`의 `version`을 올리고 `CHANGELOG.md`에 `## <버전>` 항목을 추가한 뒤,
@@ -475,6 +535,7 @@ src/
    ├─ ruleTable.ts     파일·규칙별 표(Before 0 제외) → <결과>.pmd-rules.csv
    ├─ analyzeWithPmd.ts PMD 분석 전체 흐름 → <결과>.pmd.json, <결과>.pmd-rules.csv
    ├─ topics.ts        토픽 모델링 스크립트 실행, 전용 Python 환경 준비
+   ├─ prioritize.ts    토픽별 warning 우선순위(TOP) → <결과>.topic-warnings.csv
    ├─ collector.ts     전체 파이프라인
    └─ types.ts         내부 데이터 모델 + 결과 파일 형식(OutputCommit)
 resources/topics/       topic_model.py(BERTopic 파이프라인), requirements.txt

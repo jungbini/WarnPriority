@@ -14,6 +14,10 @@
  *        [--extra-stopwords a,b] [--include-tests] [--exclude-extensions ts,tsx|none]
  *        Topic modeling (BERTopic) of the "before" files; writes <result>.topics.csv and <result>.topic-keywords.csv.
  *        The Python needs: pip install -r resources/topics/requirements.txt
+ *
+ *   node out/cli.js prioritize <result.json>
+ *        Topic-based warning prioritization from <result>.pmd-rules.csv and <result>.topics.csv;
+ *        writes <result>.topic-warnings.csv.
  */
 import * as os from 'os';
 import * as path from 'path';
@@ -23,6 +27,7 @@ import { CancelledError } from './core/git';
 import { PMD_VERSION } from './core/pmdArtifacts';
 import { installPmd, locatePmd } from './core/pmdInstaller';
 import { ALL_RULES } from './core/pmdRunner';
+import { prioritizeWarnings } from './core/prioritize';
 import { DEFAULT_TOPIC_EXCLUDED_EXTENSIONS, runTopicModel } from './core/topics';
 import { parseRepositoryInput } from './core/githubUrl';
 import { ProgressEvent } from './core/types';
@@ -51,7 +56,10 @@ function usage(): never {
       '  Runs PMD on the saved before/after files; PMD is downloaded to ~/.warnpriority/pmd unless --pmd-home is given.\n' +
       '\n' +
       '       node out/cli.js topics <result.json> [--python python3] [--model nomic-ai/CodeRankEmbed] [--min-topic-size 10] [--extra-stopwords a,b] [--include-tests] [--exclude-extensions ts,tsx,mts,cts|none]\n' +
-      '  Topic modeling (BERTopic) of the before files; the Python needs resources/topics/requirements.txt installed.',
+      '  Topic modeling (BERTopic) of the before files; the Python needs resources/topics/requirements.txt installed.\n' +
+      '\n' +
+      '       node out/cli.js prioritize <result.json>\n' +
+      '  Priority list of PMD rules per topic from the PMD rule table and the topic shares (run pmd and topics first).',
   );
   process.exit(2);
 }
@@ -80,6 +88,19 @@ async function main(): Promise<void> {
       usage();
     }
     await runTopicsCommand(path.resolve(positional[1]), flags);
+    return;
+  }
+  if (positional[0] === 'prioritize') {
+    if (positional.length < 2) {
+      usage();
+    }
+    const r = await prioritizeWarnings(path.resolve(positional[1]));
+    console.log(
+      `Done: ${new Set(r.rows.map((x) => x.topic)).size} topic priority lists from ${r.files} files (${r.ruleRows} rule rows` +
+        (r.ruleRowsWithoutTopics > 0 ? `; ${r.ruleRowsWithoutTopics} rule rows without topic modeling result left out` : '') +
+        ').',
+    );
+    console.log(r.outputFile);
     return;
   }
   if (positional[0] === 'pmd') {

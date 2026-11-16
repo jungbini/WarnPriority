@@ -67,5 +67,13 @@
   "Installing PyTorch with CUDA support (about 2-3 GB, this can take several minutes)...": "CUDA를 지원하는 PyTorch 설치 중(약 2~3 GB, 몇 분 걸릴 수 있음)...",
   "Installing BERTopic, sentence-transformers and the other packages (this can take several minutes)...": "BERTopic, sentence-transformers 등 나머지 패키지 설치 중(몇 분 걸릴 수 있음)...",
   "Embeddings were computed on the GPU ({0}).": "임베딩은 GPU({0})로 계산했습니다.",
-  "Embeddings were computed on the CPU.": "임베딩은 CPU로 계산했습니다."
+  "Embeddings were computed on the CPU.": "임베딩은 CPU로 계산했습니다.",
+  "Select a result file to prioritize its warnings by topic": "토픽별로 warning 우선순위를 정할 수집 결과 파일 선택",
+  "No file has both a topic modeling result and PMD rule rows. Run both on the same result file (topic modeling leaves out test files).": "토픽 모델링 결과와 PMD 규칙 행이 모두 있는 파일이 없습니다. 같은 수집 결과 파일에 둘 다 실행하세요(토픽 모델링은 테스트 파일을 뺍니다).",
+  "Prioritized the warnings of {0} topics from {1} files ({2} rule rows). Saved to {3}.": "파일 {1}개(규칙 행 {2}개)로 토픽 {0}개의 warning 우선순위를 정해 {3}에 저장했습니다.",
+  "{0} rule rows were left out because their files have no topic modeling result (e.g. test files).": "토픽 모델링 결과가 없는 파일(테스트 파일 등)의 규칙 행 {0}개는 제외했습니다.",
+  "Run Topic Modeling": "토픽 모델링 실행",
+  "Run the PMD analysis on this result file first ({0} was not found).": "이 수집 결과에 PMD 분석을 먼저 실행하세요({0}이(가) 없습니다).",
+  "Run topic modeling on this result file first ({0} was not found).": "이 수집 결과에 토픽 모델링을 먼저 실행하세요({0}이(가) 없습니다).",
+  "WarnPriority: warning prioritization failed. {0}": "WarnPriority: warning 우선순위 계산에 실패했습니다. {0}"
 }
